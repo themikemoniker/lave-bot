@@ -138,7 +138,7 @@ order:
   saved: "¡Recibimos tu solicitud #{order_id}! 🙌 En breve te confirmamos la agenda de tu recolección por aquí."
 
 templates:
-  programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) en el horario acordado. Te avisamos cuando esté lista 🧺"
+  programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) 🕒 {confirmed_slot}. Te avisamos cuando esté lista 🧺"
   listo: |
     🎉 ¡Tu ropa está lista! (solicitud #{order_id})
     Te la llevamos en el horario acordado 🚗, o si prefieres pasa por ella a {address}
@@ -154,6 +154,6 @@ templates:
 # Message templates (category: Utility, language: Spanish (MEX)) with the same wording as `templates`,
 # replacing each {placeholder} with {{1}}, {{2}}... in `params` order. Delete an entry to send plain text.
 wa_templates:   # TODO_CONFIRM names once Meta approves them
-  programado: {name: lave_agenda_confirmada, language: es_MX, params: [order_id]}
+  programado: {name: lave_agenda_confirmada, language: es_MX, params: [order_id, confirmed_slot]}
   listo: {name: lave_ropa_lista, language: es_MX, params: [order_id, address, hours]}
   review: {name: lave_resena, language: es_MX, params: [name, review_link]}

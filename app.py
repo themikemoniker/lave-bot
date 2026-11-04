@@ -78,10 +78,11 @@ async def receive(request: Request, bg: BackgroundTasks):
 @app.post("/orders/{order_id}/status")
 async def order_status(order_id: int, request: Request):
     check_admin(request)
-    status = (await request.json()).get("status")
+    body = await request.json()
+    status = body.get("status")
     if status not in bot.STATUSES:
         raise HTTPException(422, f"status must be one of {bot.STATUSES}")
-    msgs = bot.set_status(order_id, status)
+    msgs = bot.set_status(order_id, status, body.get("confirmed_slot"))
     if msgs is None:
         raise HTTPException(404)
     return {"id": order_id, "status": status, "sent": msgs}
@@ -101,7 +102,8 @@ def admin(request: Request):
     orders = "".join(
         f"<tr><td>{o['id']}</td><td>{e(o['name'])}<br><small>{e(o['phone'])}</small></td><td>{e(o['service'])}</td>"
         f"<td>{e(o['location'])}</td><td>{e(o['time_window'])}</td><td><b>{e(o['status'])}</b></td>"
-        f"<td><button onclick=\"st({o['id']},'programado')\">programado</button> "
+        f"<td><input id=slot{o['id']} value=\"{e(o['confirmed_slot'] or o['time_window'])}\"> "
+        f"<button onclick=\"st({o['id']},'programado',document.getElementById('slot{o['id']}').value)\">programado</button> "
         f"<button onclick=\"st({o['id']},'listo')\">listo</button></td></tr>"
         for o in bot.q("select * from orders order by id desc limit 200"))
     humans = "".join(
@@ -118,6 +120,6 @@ def admin(request: Request):
 <h2>Preguntas sin respuesta (para agregar al YAML)</h2><ul>{unanswered}</ul>
 <script>
 const H={{'Content-Type':'application/json','X-Admin-Token':'{token}'}};
-const st=(id,s)=>fetch(`/orders/${{id}}/status`,{{method:'POST',headers:H,body:JSON.stringify({{status:s}})}}).then(()=>location.reload());
+const st=(id,s,slot)=>fetch(`/orders/${{id}}/status`,{{method:'POST',headers:H,body:JSON.stringify({{status:s,confirmed_slot:slot}})}}).then(()=>location.reload());
 const rs=p=>fetch(`/users/${{p}}/reset`,{{method:'POST',headers:H}}).then(()=>location.reload());
 </script>"""

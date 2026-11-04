@@ -163,3 +163,27 @@ def test_webhook_retry_is_deduped_and_statuses_ignored(monkeypatch):
         client.post("/webhook", json=msg)  # Meta retry
         client.post("/webhook", json=status)
     assert n and len(sent) == n
+
+
+def test_old_db_gains_confirmed_slot(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "old.db"
+    with sqlite3.connect(db) as c:
+        c.execute("create table orders(id integer primary key, phone text, name text, service text, location text, "
+                  "time_window text, status text default 'nuevo', created_at real, ready_at real, review_sent int default 0)")
+        c.execute("insert into orders(phone, time_window) values('521', 'Tarde')")
+    monkeypatch.setenv("DB_PATH", str(db))
+    assert "Tarde" in bot.set_status(1, "programado")[0]
+
+
+def test_programado_confirms_exact_slot():
+    from fastapi.testclient import TestClient
+    import app
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
+        say(m)
+    assert "Mañana 9:00" in bot.set_status(1, "programado")[0]  # no slot given: customer's window
+    with TestClient(app.app) as client:
+        assert 'value="Mañana 9:00' in client.get("/admin").text
+        r = client.post("/orders/1/status", json={"status": "programado", "confirmed_slot": "martes 10:30"})
+    assert "martes 10:30" in r.json()["sent"][0]
+    assert bot.q("select confirmed_slot from orders")[0]["confirmed_slot"] == "martes 10:30"

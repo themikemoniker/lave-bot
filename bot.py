@@ -19,7 +19,7 @@ create table if not exists users(phone text primary key, name text, state text d
   draft text default '{}', needs_human int default 0, unknown_count int default 0);
 create table if not exists orders(id integer primary key, phone text, name text, service text,
   location text, time_window text, status text default 'nuevo', created_at real, ready_at real,
-  review_sent int default 0);
+  review_sent int default 0, confirmed_slot text);
 create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
 create table if not exists seen(id text primary key);  -- webhook message ids already processed
 """
@@ -35,6 +35,10 @@ def q(sql, *args):
     with closing(sqlite3.connect(os.getenv("DB_PATH", ROOT / "lave.db"))) as c:
         c.row_factory = sqlite3.Row
         c.executescript(SCHEMA)
+        try:  # self-heal DBs created before confirmed_slot existed
+            c.execute("alter table orders add column confirmed_slot text")
+        except sqlite3.OperationalError:
+            pass  # duplicate column: already there
         rows = c.execute(sql, args).fetchall()
         c.commit()
         return rows
@@ -245,14 +249,16 @@ def notify(phone, key, c, **ctx):
     return text
 
 
-def set_status(order_id, status):
+def set_status(order_id, status, confirmed_slot=None):
     """ERP/staff hook. Returns the messages sent, or None if the order doesn't exist."""
     c = cfg()
-    rows = q("update orders set status=?, ready_at=case when ?='listo' then coalesce(ready_at, ?) else ready_at end "
-             "where id=? returning phone", status, status, time.time(), order_id)
+    rows = q("update orders set status=?, ready_at=case when ?='listo' then coalesce(ready_at, ?) else ready_at end, "
+             "confirmed_slot=coalesce(?, confirmed_slot) where id=? returning phone, time_window, confirmed_slot",
+             status, status, time.time(), confirmed_slot or None, order_id)
     if not rows:
         return None
-    return [notify(rows[0]["phone"], status, c, order_id=order_id)] if status in c["templates"] else []
+    slot = rows[0]["confirmed_slot"] or rows[0]["time_window"]
+    return [notify(rows[0]["phone"], status, c, order_id=order_id, confirmed_slot=slot)] if status in c["templates"] else []
 
 
 def send_due_reviews(now=None):
