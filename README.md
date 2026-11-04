@@ -5,7 +5,7 @@ Open-source, near-zero-cost WhatsApp bot for Lavê (Zapopan). Rules + YAML confi
 ## Setup
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest -q          # 10 tests
+.venv/bin/python -m pytest -q          # 15 tests
 ```
 All business text is in `config/lave.yaml` and is re-read on every message, so edits apply without a restart.
 **Before going live:** search for `TODO_CONFIRM` (prices, payment methods, promos, review link, address, hours) and fill it in with the owner.

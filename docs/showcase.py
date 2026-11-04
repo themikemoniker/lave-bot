@@ -238,8 +238,9 @@ code {{ font-size: 8.5pt; background: #fff; border-radius: 4px; padding: 1px 5px
   <h2 style="margin-top:22px">Siguientes pasos</h2>
   <div class="cols">
     <div class="card"><ul>
-      <li>Plantillas aprobadas por Meta para «listo» y reseña (regla de 24 h de WhatsApp)</li>
-      <li>Botones interactivos de WhatsApp para el menú y los horarios</li></ul></div>
+      <li>Confirmar con el dueño cada dato TODO_CONFIRM</li>
+      <li>Registrar en Meta las plantillas programado / listo / reseña (regla de 24 h)</li>
+      <li>Publicar con Docker + cloudflared y conectar el número de WhatsApp</li></ul></div>
     <div class="card"><ul>
       <li>Conectar el ERP al endpoint de estado</li>
       <li>Revisar cada semana las preguntas sin respuesta y ampliar el YAML</li></ul></div>
