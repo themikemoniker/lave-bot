@@ -51,7 +51,11 @@ def process(payload):
             for change in entry.get("changes", []):
                 v = change.get("value", {})
                 names = {ct.get("wa_id"): ct.get("profile", {}).get("name") for ct in v.get("contacts", [])}
-                for m in v.get("messages", []):
+                for m in v.get("messages", []):  # status-only payloads (v["statuses"]) have no messages
+                    # Meta re-delivers webhooks it thinks failed; claim the id first so a retry is a no-op.
+                    # ponytail: claim-then-handle, a crash mid-handle drops that message rather than doubling it.
+                    if not bot.q("insert or ignore into seen(id) values(?) returning id", m.get("id")):
+                        continue
                     phone = m["from"]
                     replies = bot.handle_message(phone, text=m.get("text", {}).get("body"),
                                                  location=m.get("location"), name=names.get(phone))
