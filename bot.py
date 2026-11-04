@@ -17,7 +17,7 @@ STATUSES = ("nuevo", "programado", "listo", "entregado")
 SCHEMA = """
 create table if not exists users(phone text primary key, name text, state text default 'idle',
   draft text default '{}', needs_human int default 0, unknown_count int default 0);
-create table if not exists orders(id integer primary key, phone text, name text, service text, mode text,
+create table if not exists orders(id integer primary key, phone text, name text, service text,
   location text, time_window text, status text default 'nuevo', created_at real, ready_at real,
   review_sent int default 0);
 create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
@@ -110,20 +110,18 @@ def handle_message(phone, text=None, location=None, name=None):
         return order_step(phone, u, t, text, location, c)
 
     action = c["menu"].get(t)
-    if not action and hits(t, c["order_keywords"], c):
-        action = "order"
     if not action:
         best = max(((k, max(score(t, kw) for kw in f["keywords"])) for k, f in c["faq"].items()), key=lambda x: x[1])
         action = best[0] if best[1] >= c["match_threshold"] else None
 
-    if action == "order":
-        set_state(phone, "ask_service")
-        return [numbered(fmt(c["order"]["start"], c), c["order"]["services"])]
     if action == "human":
         return handoff(phone, c)
     if action:
         q("update users set unknown_count=0 where phone=?", phone)
         reply = [fmt(c["faq"][action]["reply"], c)]
+        if c["faq"][action].get("start_order"):
+            set_state(phone, "ask_service")
+            reply.append(numbered(fmt(c["order"]["start"], c), c["order"]["services"]))
         if c["faq"][action].get("handoff"):
             handoff(phone, c, msg=False)
         return reply
@@ -148,19 +146,8 @@ def order_step(phone, u, t, raw, location, c):
     if st == "ask_service":
         if not (s := pick(t, o["services"])):
             return [invalid, numbered(fmt(o["start"], c), o["services"])]
-        set_state(phone, "ask_mode", {**d, "service": s})
-        return [numbered(o["ask_mode"], o["modes"])]
-
-    if st == "ask_mode":
-        if not (m := pick(t, o["modes"])):
-            return [invalid, numbered(o["ask_mode"], o["modes"])]
-        d["mode"] = m
-        if m == o["modes"][0]:  # pickup
-            set_state(phone, "ask_location", d)
-            return [o["ask_location"]]
-        d["location"] = fmt(o["dropoff_location"], c)
-        set_state(phone, "ask_time", d)
-        return [numbered(o["ask_time"], o["time_windows"])]
+        set_state(phone, "ask_location", {**d, "service": s})
+        return [o["ask_location"]]
 
     if st == "ask_location":
         if location:
@@ -182,8 +169,8 @@ def order_step(phone, u, t, raw, location, c):
 
     if st == "confirm":
         if t in map(norm, c["yes_words"]):
-            oid = q("insert into orders(phone, name, service, mode, location, time_window, created_at) "
-                    "values(?,?,?,?,?,?,?) returning id", phone, u["name"], d["service"], d["mode"],
+            oid = q("insert into orders(phone, name, service, location, time_window, created_at) "
+                    "values(?,?,?,?,?,?) returning id", phone, u["name"], d["service"],
                     d["location"], d["time_window"], time.time())[0]["id"]
             set_state(phone, "idle")
             return [fmt(o["saved"], c, order_id=oid)]

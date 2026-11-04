@@ -16,7 +16,6 @@ unknown_before_handoff: 2
 
 # Global keywords (accent/case-insensitive, fuzzy).
 human_keywords: [hablar con una persona, persona, humano, asesor, agente, operador, alguien del equipo]
-order_keywords: [pedido, hacer un pedido, quiero lavar, recoleccion, que pasen por, agendar, mandar ropa]
 cancel_keywords: [cancelar, salir, menu]
 yes_words: ["si", "sip", "simon", "claro", "confirmo", "ok", "va", "dale", "correcto", "yes"]  # keep quotes: YAML reads bare yes/no as booleans
 no_words: ["no", "nel", "cancelar"]
@@ -29,13 +28,13 @@ messages:
     2️⃣ Métodos de pago
     3️⃣ Servicios
     4️⃣ Horarios y ubicación
-    5️⃣ Hacer un pedido
+    5️⃣ Solicitar recolección 🚗
     6️⃣ Hablar con una persona
 
     🔒 Solo guardamos tu número, nombre, ubicación y pedido para darte servicio.
   unknown: "Uy, no te entendí bien 😅 Te dejo el menú para ayudarte mejor:"
   handoff: "¡Claro! 🙌 En un momento alguien de nuestro equipo te atiende por aquí."
-  order_cancelled: "Listo, cancelamos el pedido. Si quieres empezar de nuevo escribe *pedido* 😊"
+  order_cancelled: "Listo, cancelamos la solicitud. Si quieres empezar de nuevo escribe *recolección* 😊"
   invalid_option: "Elige una de las opciones, por favor 🙏"
 
 # Menu number -> faq key, or a special action: "order" / "human".
@@ -44,11 +43,24 @@ menu:
   "2": metodos_pago
   "3": servicios
   "4": horarios
-  "5": order
+  "5": recoleccion
   "6": human
 
 # Keyword FAQ (mirrors staff quick replies). Keywords are matched accent/case-insensitive + fuzzy.
 faq:
+  # Official pickup process (Lavê Facebook, Mar 4). start_order: reply, then begin the order flow.
+  recoleccion:
+    keywords: [recoleccion, solicitar recoleccion, pasan por mi ropa, pasen por mi ropa, recogen, a domicilio,
+               servicio a domicilio, pedido, hacer un pedido, quiero lavar, agendar, mandar ropa]
+    start_order: true
+    reply: |
+      ¿Quieres solicitar una recolección? 🚗 Solo sigue estos pasos:
+      1️⃣ Escríbenos por WhatsApp ✅ (¡ya lo hiciste!)
+      2️⃣ Indícanos el servicio que necesitas
+      3️⃣ Compártenos tu ubicación
+      4️⃣ Elige tu horario
+      5️⃣ Nosotros confirmamos la agenda
+      Así de fácil 😉
   bienvenida:
     keywords: [hola, buenas, buenos dias, buenas tardes, buenas noches, menu, inicio, hi]
     reply: "{welcome}"
@@ -107,35 +119,31 @@ faq:
     reply: "¡Con gusto! 💙 Aquí estamos para lo que necesites."
 
 order:
-  start: "¡Vamos! 🧺 ¿Qué servicio necesitas? Responde con el número:"
+  # Steps map 1:1 to the official process: servicio -> ubicación -> horario -> confirmación.
+  start: "🧺 ¿Qué servicio necesitas? Responde con el número:"
   services:
     - Lavandería
     - Tintorería
     - Planchado
     - Interiores (edredones, cobijas)
     - Limpieza de tenis
-  ask_mode: "¿Cómo lo prefieres?"
-  modes:   # first option = pickup (asks for location)
-    - "Recolección y entrega a domicilio 🚗"
-    - "Lo llevo a la sucursal"
   ask_location: "📍 Compártenos tu *ubicación* de WhatsApp (clip 📎 > Ubicación) o escribe tu dirección completa."
-  ask_time: "🕒 ¿En qué horario te queda mejor?"
-  time_windows:
-    - "Mañana (8–12)"
-    - "Mediodía (12–15)"
-    - "Tarde (15–19)"
+  ask_time: "🕒 ¿En qué horario te queda mejor para la recolección?"
+  time_windows:   # TODO_CONFIRM pickup windows with the owner
+    - "Mañana 9:00–12:00 (TODO_CONFIRM)"
+    - "Mediodía 12:00–15:00 (TODO_CONFIRM)"
+    - "Tarde 15:00–18:00 (TODO_CONFIRM)"
   confirm: |
-    Confirma tu pedido 👇
+    Revisa tu solicitud de recolección 👇
     • Servicio: {service}
-    • Modalidad: {mode}
-    • Dirección: {location}
+    • Ubicación: {location}
     • Horario: {time_window}
-    ¿Todo bien? Responde *sí* para confirmar o *no* para cancelar.
-  saved: "¡Listo! ✅ Tu pedido #{order_id} quedó registrado. Te escribimos para confirmar la hora exacta 🙌"
-  dropoff_location: "Sucursal ({address})"
+    ¿Todo bien? Responde *sí* para enviarla o *no* para cancelar.
+  # Not booked yet: status stays `nuevo` until staff confirm (-> `programado`).
+  saved: "¡Recibimos tu solicitud #{order_id}! 🙌 En breve te confirmamos la agenda de tu recolección por aquí."
 
 templates:
-  programado: "📅 ¡Hola! Tu pedido #{order_id} ya está programado. Te avisamos cuando esté listo 🧺"
+  programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) en el horario acordado. Te avisamos cuando esté lista 🧺"
   listo: |
     🎉 ¡Tu pedido #{order_id} está listo!
     Puedes recogerlo en {address}

@@ -33,22 +33,25 @@ def test_unknown_logs_and_offers_menu():
     assert bot.q("select text from unanswered")[0]["text"] == "xyzzy plugh"
 
 
-def test_order_happy_path_pickup_with_location():
-    say("quiero hacer un pedido")
-    say("tenis")
-    assert "ubicación" in say("1")[0]
-    say(location={"latitude": 20.7, "longitude": -103.4})
-    assert "Confirma" in say("tarde")[0]
-    assert "#1" in say("Sí")[0]
+def test_pickup_flow_servicio_ubicacion_horario_confirmacion():
+    r = say("¿pasan por mi ropa?")
+    assert "5️⃣ Nosotros confirmamos la agenda" in r[0] and "servicio" in r[1]
+    assert "ubicación" in say("tenis")[0]
+    assert "horario" in say(location={"latitude": 20.7, "longitude": -103.4})[0]
+    assert "Revisa tu solicitud" in say("3")[0]
+    done = say("Sí")[0]
+    assert "#1" in done and "confirmamos la agenda" in done  # received, not booked
     o = bot.q("select * from orders")[0]
-    assert (o["service"], o["status"], o["time_window"]) == ("Limpieza de tenis", "nuevo", "Tarde (15–19)")
-    assert "20.7,-103.4" in o["location"]
+    assert (o["service"], o["status"]) == ("Limpieza de tenis", "nuevo")
+    assert o["time_window"].startswith("Tarde") and "20.7,-103.4" in o["location"]
+    assert "Agenda confirmada" in bot.set_status(1, "programado")[0]
 
 
-def test_order_dropoff_skips_location_and_cancel():
-    say("5")
+def test_menu_5_address_text_free_time_and_cancel():
+    assert "Así de fácil" in say("5")[0]
     say("2")
-    assert "horario" in say("sucursal")[0]
+    assert "ubicación" in say("aqui")[0]  # too short to be an address: re-ask
+    say("Av. Patria 1234, Zapopan")
     say("a las 5")
     assert "cancelamos" in say("no")[0]
     assert bot.q("select count(*) n from orders")[0]["n"] == 0
@@ -75,7 +78,7 @@ def test_repeated_unknown_hands_off():
 
 
 def test_listo_notification_and_review_after_24h():
-    for m in ["pedido", "1", "2", "1", "si"]:
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
         say(m)
     msgs = bot.set_status(1, "listo")
     assert "está listo" in msgs[0] and "Av. Aviación" in msgs[0]

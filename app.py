@@ -96,7 +96,7 @@ def admin(request: Request):
     e = lambda v: html.escape(str(v or ""))  # noqa: E731
     orders = "".join(
         f"<tr><td>{o['id']}</td><td>{e(o['name'])}<br><small>{e(o['phone'])}</small></td><td>{e(o['service'])}</td>"
-        f"<td>{e(o['mode'])}</td><td>{e(o['location'])}</td><td>{e(o['time_window'])}</td><td><b>{e(o['status'])}</b></td>"
+        f"<td>{e(o['location'])}</td><td>{e(o['time_window'])}</td><td><b>{e(o['status'])}</b></td>"
         f"<td><button onclick=\"st({o['id']},'programado')\">programado</button> "
         f"<button onclick=\"st({o['id']},'listo')\">listo</button></td></tr>"
         for o in bot.q("select * from orders order by id desc limit 200"))
@@ -108,8 +108,8 @@ def admin(request: Request):
     token = e(request.query_params.get("token", ""))
     return f"""<!doctype html><meta charset=utf-8><title>Lavê admin</title>
 <style>body{{font-family:system-ui;margin:2rem}}table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:.4rem}}</style>
-<h1>Lavê · pedidos</h1>
-<table><tr><th>#</th><th>Cliente</th><th>Servicio</th><th>Modalidad</th><th>Dirección</th><th>Horario</th><th>Estado</th><th></th></tr>{orders}</table>
+<h1>Lavê · solicitudes de recolección</h1>
+<table><tr><th>#</th><th>Cliente</th><th>Servicio</th><th>Dirección</th><th>Horario</th><th>Estado</th><th></th></tr>{orders}</table>
 <h2>Esperando a una persona</h2><ul>{humans}</ul>
 <h2>Preguntas sin respuesta (para agregar al YAML)</h2><ul>{unanswered}</ul>
 <script>
