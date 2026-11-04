@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Lavê WhatsApp bot on Lambda (Function URL) + DynamoDB + S3 config + 15-min review schedule.
+
+Parameters:
+  SsmPrefix:
+    Type: String
+    Default: /lave-bot
+    Description: SSM path holding WA_TOKEN, WA_PHONE_NUMBER_ID, WA_APP_SECRET, WA_VERIFY_TOKEN, ADMIN_TOKEN (SecureString)
+  DryRun:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "1"]
+    Description: "1 prints messages instead of sending AND skips the webhook signature check: trials only"
+  LlmFallback:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "1"]
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-opus-5-5
+    Description: Used when LlmFallback=1 (anthropic.claude-haiku-5-5 / anthropic.claude-sonnet-5-5 also work)
+
+Resources:
+  BotFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 30
+      FunctionUrlConfig:
+        AuthType: NONE  # Meta must reach /webhook; the app checks X-Hub-Signature-256 and ADMIN_TOKEN
+      Environment:
+        Variables:
+          STORE: dynamo
+          TABLE_PREFIX: !Sub "${AWS::StackName}-"
+          CONFIG_BUCKET: !Ref ConfigBucket
+          CONFIG_KEY: lave.yaml
+          SSM_PREFIX: !Ref SsmPrefix
+          DRY_RUN: !Ref DryRun
+          LLM_FALLBACK: !Ref LlmFallback
+          LLM_BACKEND: bedrock
+          LLM_MODEL: !Ref BedrockModelId
+      Events:
+        Reviews:
+          Type: Schedule  # EventBridge rule; handler() routes source=aws.events to send_due_reviews
+          Properties:
+            Schedule: rate(15 minutes)
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan]
+              Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Scan, dynamodb:Query]
+              Resource: [!GetAtt OrdersTable.Arn, !Sub "${OrdersTable.Arn}/index/due"]
+            - Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:Query, dynamodb:Scan, dynamodb:BatchWriteItem]
+              Resource: !GetAtt MessagesTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:Scan]
+              Resource: !GetAtt UnansweredTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt SeenTable.Arn
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "${ConfigBucket.Arn}/lave.yaml"
+            - Effect: Allow  # SecureStrings under the default aws/ssm key need no extra KMS grant
+              Action: ssm:GetParametersByPath
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}"
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource:
+                - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-*"
+                - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*anthropic.claude-*"
+
+  # Customer data: kept if the stack is deleted.
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-users"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: phone, AttributeType: S}]
+      KeySchema: [{AttributeName: phone, KeyType: HASH}]
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-orders"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: id, AttributeType: N}
+        - {AttributeName: review_sent, AttributeType: N}
+        - {AttributeName: ready_at, AttributeType: N}
+      KeySchema: [{AttributeName: id, KeyType: HASH}]
+      GlobalSecondaryIndexes:
+        - IndexName: due  # orders awaiting a review request, by ready time (sparse: only listo/entregado have ready_at)
+          KeySchema: [{AttributeName: review_sent, KeyType: HASH}, {AttributeName: ready_at, KeyType: RANGE}]
+          Projection: {ProjectionType: ALL}
+
+  MessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-messages"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: phone, AttributeType: S}, {AttributeName: ts, AttributeType: N}]
+      KeySchema: [{AttributeName: phone, KeyType: HASH}, {AttributeName: ts, KeyType: RANGE}]
+
+  UnansweredTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-unanswered"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: id, AttributeType: S}]
+      KeySchema: [{AttributeName: id, KeyType: HASH}]
+
+  SeenTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-seen"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: id, AttributeType: S}]
+      KeySchema: [{AttributeName: id, KeyType: HASH}]
+      TimeToLiveSpecification: {AttributeName: expires, Enabled: true}
+
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  WebhookUrl:
+    Value: !Sub "${BotFunctionUrl.FunctionUrl}webhook"
+  AdminUrl:
+    Value: !Sub "${BotFunctionUrl.FunctionUrl}admin?token=<ADMIN_TOKEN>"
+  ConfigBucket:
+    Value: !Ref ConfigBucket

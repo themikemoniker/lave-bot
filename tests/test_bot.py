@@ -1,15 +1,43 @@
+from pathlib import Path
+
 import pytest
+import yaml
 
 import bot
+import store
 
 P = "5213311111111"
 
 
-@pytest.fixture(autouse=True)
-def tmp_db(tmp_path, monkeypatch):
+def create_tables_from_template(prefix):
+    """Build the DynamoDB tables exactly as template.yaml declares them, so the tests also check the template."""
+    import boto3
+    loader = type("CfnLoader", (yaml.SafeLoader,), {})
+    loader.add_multi_constructor("!", lambda ld, suffix, node: None)  # !Sub, !Ref, ... are irrelevant here
+    template = yaml.load((Path(__file__).parent.parent / "template.yaml").read_text(), Loader=loader)
+    ddb = boto3.client("dynamodb")
+    for name, r in template["Resources"].items():
+        if r["Type"] == "AWS::DynamoDB::Table":
+            props = {k: v for k, v in r["Properties"].items() if k not in ("TableName", "TimeToLiveSpecification")}
+            ddb.create_table(TableName=prefix + name.removesuffix("Table").lower(), **props)
+
+
+@pytest.fixture(autouse=True, params=["sqlite", "dynamo"])
+def tmp_db(request, tmp_path, monkeypatch):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "t.db"))
     monkeypatch.setenv("DRY_RUN", "1")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    if request.param == "sqlite":
+        monkeypatch.setattr(bot, "db", store.SqliteStore())
+        yield
+        return
+    from moto import mock_aws
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setenv("TABLE_PREFIX", "t-")
+    with mock_aws():
+        create_tables_from_template("t-")
+        monkeypatch.setattr(bot, "db", store.DynamoStore())
+        yield
 
 
 def say(text=None, **kw):
@@ -30,7 +58,7 @@ def test_faq_accents_case_and_typos():
 def test_unknown_logs_and_offers_menu():
     r = say("xyzzy plugh")
     assert "no te entendí" in r[0] and "1. Precios" in r[1]
-    assert bot.q("select text from unanswered")[0]["text"] == "xyzzy plugh"
+    assert bot.db.unanswered()[0]["text"] == "xyzzy plugh"
 
 
 def test_pickup_flow_servicio_ubicacion_horario_confirmacion():
@@ -41,7 +69,7 @@ def test_pickup_flow_servicio_ubicacion_horario_confirmacion():
     assert "Revisa tu solicitud" in say("3")[0]
     done = say("Sí")[0]
     assert "#1" in done and "confirmamos la agenda" in done  # received, not booked
-    o = bot.q("select * from orders")[0]
+    o = bot.db.orders()[0]
     assert (o["service"], o["status"]) == ("Limpieza de tenis", "nuevo")
     assert o["time_window"].startswith("Tarde") and "20.7,-103.4" in o["location"]
     assert "Agenda confirmada" in bot.set_status(1, "programado")[0]
@@ -54,14 +82,14 @@ def test_menu_5_address_text_free_time_and_cancel():
     say("Av. Patria 1234, Zapopan")
     say("a las 5")
     assert "cancelamos" in say("no")[0]
-    assert bot.q("select count(*) n from orders")[0]["n"] == 0
+    assert bot.db.orders() == []
 
 
 def test_invalid_option_reprompts():
     say("pedido")
     r = say("9")
     assert "Elige una" in r[0]
-    assert bot.q("select state from users")[0]["state"] == "ask_service"
+    assert bot.db.user(P)["state"] == "ask_service"
 
 
 def test_handoff_silences_bot_until_reset():
@@ -74,7 +102,7 @@ def test_handoff_silences_bot_until_reset():
 def test_repeated_unknown_hands_off():
     say("asdf qwer")
     assert "equipo" in say("zxcv uiop")[0]
-    assert bot.q("select needs_human from users")[0]["needs_human"] == 1
+    assert bot.db.user(P)["needs_human"] == 1
 
 
 def test_listo_notification_and_review_after_24h():
@@ -126,8 +154,8 @@ def test_menus_go_out_as_whatsapp_lists_and_taps_drive_the_flow(monkeypatch):
         assert "1." not in menu["body"]["text"] and "🔒" in menu["body"]["text"]
         post(tap("5"))  # Solicitar recolección
         post(tap("5"))  # Limpieza de tenis
-    assert bot.q("select state, draft from users")[0]["state"] == "ask_location"
-    assert "tenis" in bot.q("select draft from users")[0]["draft"]
+    assert bot.db.user(P)["state"] == "ask_location"
+    assert "tenis" in bot.db.user(P)["draft"]
 
 
 def test_webhook_signature_and_message(monkeypatch):
@@ -146,7 +174,7 @@ def test_webhook_signature_and_message(monkeypatch):
         assert client.post("/webhook", content=body, headers={"x-hub-signature-256": "sha256=bad"}).status_code == 403
         assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
     assert sent and "Somos Lavê" in sent[0][1]
-    assert bot.q("select name from users")[0]["name"] == "Ana"
+    assert bot.db.user(P)["name"] == "Ana"
 
 
 def test_webhook_retry_is_deduped_and_statuses_ignored(monkeypatch):
@@ -167,6 +195,8 @@ def test_webhook_retry_is_deduped_and_statuses_ignored(monkeypatch):
 
 def test_old_db_gains_confirmed_slot(tmp_path, monkeypatch):
     import sqlite3
+    if not isinstance(bot.db, store.SqliteStore):
+        pytest.skip("SQLite migration")
     db = tmp_path / "old.db"
     with sqlite3.connect(db) as c:
         c.execute("create table orders(id integer primary key, phone text, name text, service text, location text, "
@@ -186,7 +216,7 @@ def test_programado_confirms_exact_slot():
         assert 'value="Mañana 9:00' in client.get("/admin").text
         r = client.post("/orders/1/status", json={"status": "programado", "confirmed_slot": "martes 10:30"})
     assert "martes 10:30" in r.json()["sent"][0]
-    assert bot.q("select confirmed_slot from orders")[0]["confirmed_slot"] == "martes 10:30"
+    assert bot.db.orders()[0]["confirmed_slot"] == "martes 10:30"
 
 
 def test_entregado_thanks_customer_and_still_triggers_review():
@@ -205,7 +235,7 @@ def test_entregado_thanks_customer_and_still_triggers_review():
 def test_conversation_is_logged_for_admin():
     say("hola")
     say(location={"latitude": 20.7, "longitude": -103.4, "name": "Casa"})
-    rows = [(r["who"], r["text"]) for r in bot.q("select who, text from messages order by id")]
+    rows = [(r["who"], r["text"]) for r in bot.db.messages(P)]
     assert rows[0] == ("customer", "hola") and rows[1][0] == "bot" and "Lavê" in rows[1][1]
     assert rows[2] == ("customer", "📍 Casa https://maps.google.com/?q=20.7,-103.4")
 
@@ -220,10 +250,10 @@ def test_business_app_echo_is_logged_and_pauses_bot():
         client.post("/webhook", json=echo)
         client.post("/webhook", json=echo)  # Meta retry
         assert "Hola, soy Ana de Lavê" in client.get(f"/admin/chat/{P}").text
-    staff = bot.q("select text from messages where who='staff_app'")
+    staff = [m for m in bot.db.messages(P) if m["who"] == "staff_app"]
     assert [r["text"] for r in staff] == ["Hola, soy Ana de Lavê"]
     assert say("gracias") == []  # staff owns the chat now
-    assert bot.q("select text from messages order by id desc limit 1")[0]["text"] == "gracias"
+    assert bot.db.messages(P)[-1]["text"] == "gracias"
 
 
 def test_admin_reply_sends_logs_and_respects_24h(monkeypatch):
@@ -238,8 +268,8 @@ def test_admin_reply_sends_logs_and_respects_24h(monkeypatch):
         real = time.time
         monkeypatch.setattr(time, "time", lambda: real() + 25 * 3600)
         assert client.post(f"/users/{P}/reply", json={"text": "¿sigues ahí?"}).status_code == 409
-    assert bot.q("select needs_human from users where phone=?", P)[0]["needs_human"] == 1
-    assert bot.q("select count(*) n from messages where who='staff_admin'")[0]["n"] == 1
+    assert bot.db.user(P)["needs_human"] == 1
+    assert sum(m["who"] == "staff_admin" for m in bot.db.messages(P)) == 1
 
 
 def test_purge_drops_only_old_messages():
@@ -247,3 +277,76 @@ def test_purge_drops_only_old_messages():
     say("hola")
     assert bot.purge_messages() == 0
     assert bot.purge_messages(now=time.time() + 91 * 86400) == 2  # customer + bot
+
+
+def test_stale_user_write_conflicts_and_turn_is_retried(monkeypatch):
+    a, b = bot.db.user(P), bot.db.user(P)
+    bot.save(a, state="ask_service")
+    with pytest.raises(store.Conflict):
+        bot.save(b, state="confirm")  # b read version 0, a already bumped it
+    real, calls = bot.db.save_user, []
+    def flaky(u):  # first save of the turn loses a race, the retry wins
+        calls.append(u["state"])
+        if len(calls) == 1:
+            raise store.Conflict(P)
+        real(u)
+    monkeypatch.setattr(bot.db, "save_user", flaky)
+    assert "equipo" in say("quiero hablar con una persona")[0]
+    assert len(calls) == 2 and bot.db.user(P)["needs_human"] == 1
+
+
+def test_config_from_s3_is_cached_and_falls_back_to_local(monkeypatch):
+    import time
+    import boto3
+    from moto import mock_aws
+    monkeypatch.setattr(bot, "_s3", {"at": 0, "cfg": None})
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setenv("CONFIG_BUCKET", "cfg")
+    with mock_aws():
+        assert bot.cfg()["business"]["name"]  # bucket missing: local file
+        s3 = boto3.client("s3")
+        s3.create_bucket(Bucket="cfg")
+        s3.put_object(Bucket="cfg", Key="lave.yaml", Body=b"business: {name: S3}")
+        assert bot.cfg()["business"]["name"] == "S3"
+        s3.put_object(Bucket="cfg", Key="lave.yaml", Body=b"business: {name: S3 v2}")
+        assert bot.cfg()["business"]["name"] == "S3"  # cached
+        real = time.time
+        monkeypatch.setattr(time, "time", lambda: real() + 61)
+        assert bot.cfg()["business"]["name"] == "S3 v2"
+
+
+def test_lambda_handler_routes_schedule_and_function_url(monkeypatch):
+    import time
+    import app
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
+        say(m)
+    bot.set_status(1, "listo")
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 25 * 3600)
+    assert app.handler({"source": "aws.events", "detail-type": "Scheduled Event"}, None)["reviews"] == 1
+    monkeypatch.setenv("WA_VERIFY_TOKEN", "vt")
+    url_event = {"version": "2.0", "rawPath": "/webhook", "rawQueryString": "hub.mode=subscribe&hub.verify_token=vt&hub.challenge=42",
+                 "headers": {"host": "x.lambda-url.us-east-1.on.aws"}, "isBase64Encoded": False,
+                 "requestContext": {"http": {"method": "GET", "path": "/webhook", "sourceIp": "1.2.3.4", "protocol": "HTTP/1.1"}}}
+    r = app.handler(url_event, None)
+    assert r["statusCode"] == 200 and r["body"] == "42"
+
+
+def test_bedrock_backend_keeps_no_se_contract(monkeypatch):
+    import boto3
+    import llm
+    monkeypatch.setenv("LLM_FALLBACK", "1")
+    monkeypatch.setenv("LLM_BACKEND", "bedrock")
+    reply = {}
+    class FakeBedrock:
+        def converse(self, **kw):
+            assert kw["inferenceConfig"]["maxTokens"] <= 512 and "NO_SE" in kw["system"][0]["text"]
+            return {"stopReason": reply["stop"], "output": {"message": {"content": [{"text": reply["text"]}]}}}
+    monkeypatch.setattr(boto3, "client", lambda svc, **kw: FakeBedrock())
+    c = bot.cfg()
+    reply.update(stop="end_turn", text="Abrimos a las 8 😊")
+    assert llm.llm_answer("¿a qué hora abren?", c) == "Abrimos a las 8 😊"
+    reply.update(text="NO_SE")
+    assert llm.llm_answer("¿venden pizza?", c) is None
+    reply.update(stop="max_tokens", text="Abrimos a")
+    assert llm.llm_answer("¿a qué hora abren?", c) is None
