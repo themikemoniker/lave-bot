@@ -83,3 +83,22 @@ def test_listo_notification_and_review_after_24h():
     import time
     assert bot.send_due_reviews(now=time.time() + 25 * 3600) == 1
     assert bot.send_due_reviews(now=time.time() + 50 * 3600) == 0  # only once
+
+
+def test_webhook_signature_and_message(monkeypatch):
+    import hashlib, hmac, json
+    from fastapi.testclient import TestClient
+    import app
+    monkeypatch.delenv("DRY_RUN")
+    monkeypatch.setenv("WA_APP_SECRET", "s3cret")
+    sent = []
+    monkeypatch.setattr(bot, "send", lambda phone, text: sent.append((phone, text)))
+    body = json.dumps({"entry": [{"changes": [{"value": {
+        "contacts": [{"wa_id": P, "profile": {"name": "Ana"}}],
+        "messages": [{"from": P, "type": "text", "text": {"body": "hola"}}]}}]}]}).encode()
+    sig = "sha256=" + hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
+    with TestClient(app.app) as client:
+        assert client.post("/webhook", content=body, headers={"x-hub-signature-256": "sha256=bad"}).status_code == 403
+        assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
+    assert sent and "Somos Lavê" in sent[0][1]
+    assert bot.q("select name from users")[0]["name"] == "Ana"
