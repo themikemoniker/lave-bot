@@ -9,6 +9,7 @@ Open-source, near-zero-cost WhatsApp bot for Lavê (Zapopan). Rules + YAML confi
 - [x] Pickup request in Lavê's official steps: service → location (WhatsApp pin or typed address) → time slot → confirm
 - [x] Handoff to a person (on request or after 2 unknown messages); bot stays silent until staff reactivate it
 - [x] Unanswered questions logged so they can be added to the YAML
+- [x] Staff inbox: reply from the WhatsApp Business app or `/admin/chat/<phone>`, one shared history; bot pauses when staff write
 - [x] `/admin` page: orders, confirm exact pickup slot (**programado**), mark **listo** and **entregado**, reactivate bot
 - [x] Status hook for the ERP (`nuevo programado listo entregado`)
 - [x] Customer messages on programado, listo and entregado, review request 24h after listo (or entregado), sent as Meta templates (24h rule)
@@ -21,7 +22,7 @@ Open-source, near-zero-cost WhatsApp bot for Lavê (Zapopan). Rules + YAML confi
 - [ ] Meta app, WhatsApp number and a permanent System User token
 - [ ] Create the 4 templates in WhatsApp Manager and get them approved
 - [ ] Deploy on HTTPS with `ADMIN_TOKEN` and `WA_APP_SECRET` set
-- [ ] Decide how staff reply to handed-off chats (WhatsApp Business app coexistence, or a reply box in `/admin`)
+- [ ] Connect the shop's WhatsApp Business app number with coexistence (see *Staff replies* below) and test that API-sent messages show in the app
 - [ ] Connect the ERP to the status hook, or staff use `/admin` only
 
 **Deliveries (return trip)**: today the listo message says staff will write to coordinate the delivery; the bot books only the pickup slot
@@ -38,7 +39,7 @@ Open-source, near-zero-cost WhatsApp bot for Lavê (Zapopan). Rules + YAML confi
 ## Setup
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest -q          # 16 tests
+.venv/bin/python -m pytest -q          # 20 tests
 ```
 All business text is in `config/lave.yaml` and is re-read on every message, so edits apply without a restart.
 **Before going live:** search for `TODO_CONFIRM` (prices, payment methods, promos, review link, address, hours) and fill it in with the owner.
@@ -86,5 +87,21 @@ Use `https://<random>.trycloudflare.com/webhook` as the webhook URL (step 3 belo
 4. Run `uvicorn app:app --host 0.0.0.0 --port 8000` with the env vars above (no `DRY_RUN`).
 5. **24h rule / templates:** WhatsApp only allows free-form messages within 24h of the customer's last message, and "programado", "listo", "entregado" and the review request often land later. They are sent as Meta-approved templates listed under `wa_templates` in `config/lave.yaml`. In WhatsApp Manager > Message templates, create each one (category *Utility*, Spanish (MEX)) with the wording from `templates`, using `{{1}}`, `{{2}}`… in `params` order. Until they're approved, those sends fail and are logged as `[send error]`; customer replies inside the 24h window still work. In `DRY_RUN` they print as plain text.
 
+## Staff replies: WhatsApp Business app + `/admin`, synced
+Staff can answer a chat from the **WhatsApp Business app** on the shop's number or from **`/admin/chat/<phone>`**
+(customer names in `/admin` link there). Both show the same conversation:
+- customer messages reach the app and the webhook; the bot logs them
+- replies typed in the app arrive as `smb_message_echoes` webhooks, are logged as *staff · app*, and pause the bot for that chat
+- replies from `/admin` (and the bot's own) are sent through the API, which Meta mirrors into the app
+- "reactivar bot" (in `/admin` or the chat page) hands the chat back to the bot
+
+Setup (Meta *coexistence*): connect the existing WhatsApp Business app number to the Meta app through Embedded Signup
+(Meta frames this as onboarding "via a solution provider", so it may need Tech Provider setup or a BSP), then also
+subscribe the webhook to the **`smb_message_echoes`** field. Coexistence turns off some app features on that number:
+broadcast lists, disappearing and view-once messages, message edits and live location. Echoes are best-effort, so a
+staff message can occasionally be missing from `/admin`. `/admin` replies only work within 24h of the customer's last
+message; after that the page says so.
+
 ## Privacy
-We store only phone, WhatsApp profile name, the location/address, and order details. The welcome message says so.
+We store phone, WhatsApp profile name, the location/address, order details and the conversation text (for the staff
+inbox). Conversation rows are deleted after `message_retention_days` (default 90). The welcome message says so.

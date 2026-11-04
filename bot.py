@@ -22,6 +22,7 @@ create table if not exists orders(id integer primary key, phone text, name text,
   review_sent int default 0, confirmed_slot text);
 create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
 create table if not exists seen(id text primary key);  -- webhook message ids already processed
+create table if not exists messages(id integer primary key, phone text, who text, text text, created_at real);
 """
 
 
@@ -111,8 +112,46 @@ def reset_user(phone):
     q("update users set needs_human=0, unknown_count=0, state='idle', draft='{}' where phone=?", phone)
 
 
+# ---- conversation log, shared by the bot, /admin and the WhatsApp Business app (coexistence echoes) ----
+WHO = ("customer", "bot", "staff_app", "staff_admin")
+
+
+def log(phone, who, text):
+    q("insert into messages(phone, who, text, created_at) values(?,?,?,?)", phone, who, str(text), time.time())
+
+
+def staff_message(phone, text, who):
+    """A person replied (Business app echo or /admin): keep it in the thread and keep the bot out of the chat."""
+    q("insert or ignore into users(phone) values(?)", phone)
+    q("update users set needs_human=1, state='idle', draft='{}' where phone=?", phone)
+    log(phone, who, text)
+
+
+def last_customer_at(phone):
+    r = q("select max(created_at) t from messages where phone=? and who='customer'", phone)
+    return r[0]["t"] if r else None
+
+
+def purge_messages(now=None):
+    days = cfg().get("message_retention_days", 90)
+    return len(q("delete from messages where created_at<? returning id", (now or time.time()) - days * 86400))
+
+
 def handle_message(phone, text=None, location=None, name=None):
     """location: {"latitude", "longitude", "name"?, "address"?}. Returns replies to send (may be empty)."""
+    if location:
+        where = location.get("name") or location.get("address")
+        log(phone, "customer", " ".join(filter(None, ["📍", where,
+            f"https://maps.google.com/?q={location['latitude']},{location['longitude']}"])))
+    else:
+        log(phone, "customer", text or "")
+    replies = _handle(phone, text, location, name)
+    for r in replies:
+        log(phone, "bot", r)
+    return replies
+
+
+def _handle(phone, text, location, name):
     c = cfg()
     q("insert or ignore into users(phone) values(?)", phone)
     if name:
@@ -214,30 +253,33 @@ def _post(phone, payload):
                        headers={"Authorization": f"Bearer {os.environ['WA_TOKEN']}"}, timeout=10,
                        json={"messaging_product": "whatsapp", "to": phone, **payload})
         r.raise_for_status()
+        return True
     except Exception as e:  # never crash the webhook/scheduler on a failed send
         print(f"[send error → {phone}] {e}", flush=True)
+        return False
 
 
 def send(phone, text):
+    """Returns False if WhatsApp rejected it (callers that show a result to staff check this)."""
     if os.getenv("DRY_RUN") == "1":
         print(f"[DRY_RUN → {phone}]\n{text}\n", flush=True)
-        return
+        return True
     if isinstance(text, Menu):
         # ponytail: row ids are plain numbers, so tapping a stale list from an earlier step picks that number
         # in the current step; prefix ids with the state if that ever confuses customers.
         rows = [{"id": str(i), "title": o[:24], **({"description": o[:72]} if len(o) > 24 else {})}
                 for i, o in enumerate(text.options[:10], 1)]
-        _post(phone, {"type": "interactive", "interactive": {
+        return _post(phone, {"type": "interactive", "interactive": {
             "type": "list", "body": {"text": text.body[:1024]},
             "action": {"button": cfg()["messages"]["list_button"][:20], "sections": [{"title": "Opciones", "rows": rows}]}}})
-        return
-    _post(phone, {"type": "text", "text": {"body": text}})
+    return _post(phone, {"type": "text", "text": {"body": text}})
 
 
 def notify(phone, key, c, **ctx):
     """Staff-triggered/scheduled message. May land outside WhatsApp's 24h window, so it goes out as the
     Meta-approved template from `wa_templates` when configured (plain text in DRY_RUN). Returns the text."""
     text = fmt(c["templates"][key], c, **ctx)
+    log(phone, "bot", text)
     t = (c.get("wa_templates") or {}).get(key)
     if not t or os.getenv("DRY_RUN") == "1":
         send(phone, text)

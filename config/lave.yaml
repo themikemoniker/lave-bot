@@ -10,6 +10,9 @@ business:
   review_link: "https://www.google.com/maps/search/?api=1&query=Lav%C3%AA+Zapopan"  # TODO_CONFIRM: Google review link
   review_delay_hours: 24
 
+# Chat history (shown in /admin) is deleted after this many days. Keep in sync with messages.privacy.
+message_retention_days: 90
+
 # Fuzzy-match threshold (0-100). Below this the message counts as "unknown".
 match_threshold: 80
 # Unknown messages in a row before handing off to a human.
@@ -25,7 +28,7 @@ messages:
   welcome: |
     Hola 👋 Somos {name}, tu lavandería de confianza 🧺✨
     ¿En qué te ayudamos hoy?
-  privacy: "🔒 Solo guardamos tu número, nombre, ubicación y pedido para darte servicio."
+  privacy: "🔒 Solo guardamos tu número, nombre, ubicación, pedido y esta conversación (se borra a los 90 días) para darte servicio."
   list_button: "Ver opciones"   # WhatsApp list button text (max 20 chars)
   unknown: "Uy, no te entendí bien 😅 Te dejo el menú para ayudarte mejor:"
   handoff: "¡Claro! 🙌 En un momento alguien de nuestro equipo te atiende por aquí."
