@@ -104,7 +104,8 @@ def admin(request: Request):
         f"<td>{e(o['location'])}</td><td>{e(o['time_window'])}</td><td><b>{e(o['status'])}</b></td>"
         f"<td><input id=slot{o['id']} value=\"{e(o['confirmed_slot'] or o['time_window'])}\"> "
         f"<button onclick=\"st({o['id']},'programado',document.getElementById('slot{o['id']}').value)\">programado</button> "
-        f"<button onclick=\"st({o['id']},'listo')\">listo</button></td></tr>"
+        f"<button onclick=\"st({o['id']},'listo')\">listo</button> "
+        f"<button onclick=\"st({o['id']},'entregado')\">entregado</button></td></tr>"
         for o in bot.q("select * from orders order by id desc limit 200"))
     humans = "".join(
         f"<li>{e(u['name'])} {e(u['phone'])} <button onclick=\"rs('{e(u['phone'])}')\">reactivar bot</button></li>"

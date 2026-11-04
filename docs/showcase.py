@@ -61,6 +61,7 @@ convo("5213310000004", ["recolección", "2", "Av. Patria 1234, Zapopan", "1", "s
 lifecycle = []
 for label, fn in [("Staff confirma la agenda → programado", lambda: bot.set_status(1, "programado")),
                   ("Staff marca → listo", lambda: bot.set_status(1, "listo")),
+                  ("Staff marca → entregado", lambda: bot.set_status(1, "entregado")),
                   ("24 h después (automático)", lambda: bot.send_due_reviews(now=time.time() + 25 * 3600))]:
     sent.clear()
     fn()
@@ -191,7 +192,7 @@ code {{ font-size: 8.5pt; background: #fff; border-radius: 4px; padding: 1px 5px
   <div class="flow">{flow}</div>
   <h2>Ciclo de la solicitud</h2>
   <div class="life"><span class="pill on">nuevo</span><span class="arrow">→ staff confirma →</span>
-    <span class="pill on">programado</span><span class="arrow">→</span><span class="pill on">listo</span>
+    <span class="pill on">programado</span><span class="arrow">→</span><span class="pill on">listo</span><span class="arrow">→</span><span class="pill on">entregado</span>
     <span class="arrow">→ 24 h →</span><span class="pill">reseña de Google ⭐</span></div>
   <p class="lead">El bot nunca promete el horario: la solicitud queda en <b>nuevo</b> hasta que el staff confirma la agenda.</p>
 </section>
@@ -242,7 +243,7 @@ code {{ font-size: 8.5pt; background: #fff; border-radius: 4px; padding: 1px 5px
   <div class="cols">
     <div class="card"><ul>
       <li>Confirmar con el dueño cada dato TODO_CONFIRM</li>
-      <li>Registrar en Meta las plantillas programado / listo / reseña (regla de 24 h)</li>
+      <li>Registrar en Meta las plantillas programado / listo / entregado / reseña (regla de 24 h)</li>
       <li>Publicar con Docker + cloudflared y conectar el número de WhatsApp</li></ul></div>
     <div class="card"><ul>
       <li>Conectar el ERP al endpoint de estado</li>

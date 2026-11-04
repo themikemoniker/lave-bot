@@ -187,3 +187,16 @@ def test_programado_confirms_exact_slot():
         r = client.post("/orders/1/status", json={"status": "programado", "confirmed_slot": "martes 10:30"})
     assert "martes 10:30" in r.json()["sent"][0]
     assert bot.q("select confirmed_slot from orders")[0]["confirmed_slot"] == "martes 10:30"
+
+
+def test_entregado_thanks_customer_and_still_triggers_review():
+    from fastapi.testclient import TestClient
+    import time
+    import app
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
+        say(m)
+    with TestClient(app.app) as client:
+        assert "'entregado'" in client.get("/admin").text
+        r = client.post("/orders/1/status", json={"status": "entregado"})  # staff skipped listo
+    assert "#1 entregada" in r.json()["sent"][0]
+    assert bot.send_due_reviews(now=time.time() + 25 * 3600) == 1

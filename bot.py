@@ -252,7 +252,7 @@ def notify(phone, key, c, **ctx):
 def set_status(order_id, status, confirmed_slot=None):
     """ERP/staff hook. Returns the messages sent, or None if the order doesn't exist."""
     c = cfg()
-    rows = q("update orders set status=?, ready_at=case when ?='listo' then coalesce(ready_at, ?) else ready_at end, "
+    rows = q("update orders set status=?, ready_at=case when ? in ('listo', 'entregado') then coalesce(ready_at, ?) else ready_at end, "
              "confirmed_slot=coalesce(?, confirmed_slot) where id=? returning phone, time_window, confirmed_slot",
              status, status, time.time(), confirmed_slot or None, order_id)
     if not rows:
