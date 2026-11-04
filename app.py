@@ -57,7 +57,7 @@ def process(payload):
                     if not bot.q("insert or ignore into seen(id) values(?) returning id", m.get("id")):
                         continue
                     phone = m["from"]
-                    replies = bot.handle_message(phone, text=m.get("text", {}).get("body"),
+                    replies = bot.handle_message(phone, text=bot.incoming_text(m),
                                                  location=m.get("location"), name=names.get(phone))
                     for r in replies:
                         bot.send(phone, r)
