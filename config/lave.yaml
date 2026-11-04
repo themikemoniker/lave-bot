@@ -143,7 +143,7 @@ order:
   saved: "¡Recibimos tu solicitud #{order_id}! 🙌 En breve te confirmamos la agenda de tu recolección por aquí."
 
 templates:
-  programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) en el horario acordado. Te avisamos cuando esté lista 🧺"
+  programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) 🕒 {confirmed_slot}. Te avisamos cuando esté lista 🧺"
   listo: |
     🎉 ¡Tu pedido #{order_id} está listo!
     Puedes recogerlo en {address}

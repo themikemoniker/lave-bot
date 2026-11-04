@@ -105,3 +105,16 @@ def test_webhook_signature_and_message(monkeypatch):
         assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
     assert sent and "Somos Lavê" in sent[0][1]
     assert bot.q("select name from users")[0]["name"] == "Ana"
+
+
+def test_programado_confirms_exact_slot():
+    from fastapi.testclient import TestClient
+    import app
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
+        say(m)
+    assert "Mañana 9:00" in bot.set_status(1, "programado")[0]  # no slot given: customer's window
+    with TestClient(app.app) as client:
+        assert 'value="Mañana 9:00' in client.get("/admin").text
+        r = client.post("/orders/1/status", json={"status": "programado", "confirmed_slot": "martes 10:30"})
+    assert "martes 10:30" in r.json()["sent"][0]
+    assert bot.q("select confirmed_slot from orders")[0]["confirmed_slot"] == "martes 10:30"
