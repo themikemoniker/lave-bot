@@ -29,7 +29,7 @@ def test_faq_accents_case_and_typos():
 
 def test_unknown_logs_and_offers_menu():
     r = say("xyzzy plugh")
-    assert "no te entendí" in r[0] and "1️⃣ Precios" in r[1]
+    assert "no te entendí" in r[0] and "1. Precios" in r[1]
     assert bot.q("select text from unanswered")[0]["text"] == "xyzzy plugh"
 
 
@@ -100,6 +100,34 @@ def test_notifications_use_meta_template_outside_dry_run(monkeypatch):
     params = [x["text"] for x in p["template"]["components"][0]["parameters"]]
     assert params[0] == "1" and params[1].startswith("Av. Aviación")
     assert "está lista" in text  # API/admin still get the rendered text
+
+
+def test_menus_go_out_as_whatsapp_lists_and_taps_drive_the_flow(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+    import hashlib, hmac, json
+    monkeypatch.delenv("DRY_RUN")
+    monkeypatch.setenv("WA_APP_SECRET", "s3cret")
+    posted = []
+    monkeypatch.setattr(bot, "_post", lambda phone, payload: posted.append(payload))
+    tap = lambda i: {"entry": [{"changes": [{"value": {"messages": [  # noqa: E731
+        {"from": P, "type": "interactive", "interactive": {"type": "list_reply", "list_reply": {"id": i}}}]}}]}]}
+    def post(payload):
+        body = json.dumps(payload).encode()
+        sig = "sha256=" + hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
+        assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
+
+    with TestClient(app.app) as client:
+        post({"entry": [{"changes": [{"value": {"messages": [
+            {"from": P, "type": "text", "text": {"body": "hola"}}]}}]}]})
+        menu = posted[-1]["interactive"]
+        assert posted[-1]["type"] == "interactive" and menu["type"] == "list"
+        assert [r["id"] for r in menu["action"]["sections"][0]["rows"]] == list("123456")
+        assert "1." not in menu["body"]["text"] and "🔒" in menu["body"]["text"]
+        post(tap("5"))  # Solicitar recolección
+        post(tap("5"))  # Limpieza de tenis
+    assert bot.q("select state, draft from users")[0]["state"] == "ask_location"
+    assert "tenis" in bot.q("select draft from users")[0]["draft"]
 
 
 def test_webhook_signature_and_message(monkeypatch):

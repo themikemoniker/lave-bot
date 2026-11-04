@@ -53,7 +53,7 @@ def process(payload):
                 names = {ct.get("wa_id"): ct.get("profile", {}).get("name") for ct in v.get("contacts", [])}
                 for m in v.get("messages", []):
                     phone = m["from"]
-                    replies = bot.handle_message(phone, text=m.get("text", {}).get("body"),
+                    replies = bot.handle_message(phone, text=bot.incoming_text(m),
                                                  location=m.get("location"), name=names.get(phone))
                     for r in replies:
                         bot.send(phone, r)
