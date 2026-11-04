@@ -21,6 +21,7 @@ create table if not exists orders(id integer primary key, phone text, name text,
   location text, time_window text, status text default 'nuevo', created_at real, ready_at real,
   review_sent int default 0, confirmed_slot text);
 create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
+create table if not exists seen(id text primary key);  -- webhook message ids already processed
 """
 
 
@@ -65,13 +66,29 @@ def hits(text, kws, c):
 
 
 def fmt(template, c, **extra):
-    ctx = {**c["business"], **extra}
-    ctx["welcome"] = c["messages"]["welcome"].format_map(ctx)
-    return template.format_map(ctx).strip()
+    return template.format_map({**c["business"], **extra}).strip()
 
 
-def numbered(prompt, options):
-    return prompt + "\n" + "\n".join(f"{i}. {o}" for i, o in enumerate(options, 1))
+class Menu(str):
+    """A reply that is also a choice list: prints as numbered text (sim, DRY_RUN, tests); send() turns it into a
+    WhatsApp interactive list whose row ids are the same numbers, so the handler needs no changes."""
+
+
+def numbered(prompt, options, footer=""):
+    m = Menu(prompt + "\n" + "\n".join(f"{i}. {o}" for i, o in enumerate(options, 1)) + footer)
+    m.body, m.options = prompt + footer, list(options)
+    return m
+
+
+def welcome(c):
+    m = c["messages"]
+    return numbered(fmt(m["welcome"], c), [v["label"] for v in c["menu"].values()], "\n\n" + m["privacy"])
+
+
+def incoming_text(m):
+    """Webhook message -> text the handler understands (typed text, or the id of a tapped list row/button)."""
+    ir = m.get("interactive") or {}
+    return (m.get("text") or {}).get("body") or (ir.get("list_reply") or ir.get("button_reply") or {}).get("id")
 
 
 def pick(t, options):
@@ -113,7 +130,7 @@ def handle_message(phone, text=None, location=None, name=None):
             return [fmt(c["messages"]["order_cancelled"], c)]
         return order_step(phone, u, t, text, location, c)
 
-    action = c["menu"].get(t)
+    action = (c["menu"].get(t) or {}).get("action")
     if not action:
         best = max(((k, max(score(t, kw) for kw in f["keywords"])) for k, f in c["faq"].items()), key=lambda x: x[1])
         action = best[0] if best[1] >= c["match_threshold"] else None
@@ -122,6 +139,8 @@ def handle_message(phone, text=None, location=None, name=None):
         return handoff(phone, c)
     if action:
         q("update users set unknown_count=0 where phone=?", phone)
+        if c["faq"][action].get("welcome"):
+            return [welcome(c)]
         reply = [fmt(c["faq"][action]["reply"], c)]
         if c["faq"][action].get("start_order"):
             set_state(phone, "ask_service")
@@ -140,7 +159,7 @@ def handle_message(phone, text=None, location=None, name=None):
     q("update users set unknown_count=? where phone=?", n, phone)
     if n >= c["unknown_before_handoff"]:
         return handoff(phone, c)
-    return [fmt(c["messages"]["unknown"], c), fmt(c["messages"]["welcome"], c)]
+    return [fmt(c["messages"]["unknown"], c), welcome(c)]
 
 
 def order_step(phone, u, t, raw, location, c):
@@ -184,22 +203,50 @@ def order_step(phone, u, t, raw, location, c):
         return [fmt(o["confirm"], c, **d)]
 
     set_state(phone, "idle")  # unknown state: recover
-    return [fmt(c["messages"]["welcome"], c)]
+    return [welcome(c)]
 
 
 # ---- outbound (status notifications, reviews) ----
+
+def _post(phone, payload):
+    try:
+        r = httpx.post(f"https://graph.facebook.com/v21.0/{os.environ['WA_PHONE_NUMBER_ID']}/messages",
+                       headers={"Authorization": f"Bearer {os.environ['WA_TOKEN']}"}, timeout=10,
+                       json={"messaging_product": "whatsapp", "to": phone, **payload})
+        r.raise_for_status()
+    except Exception as e:  # never crash the webhook/scheduler on a failed send
+        print(f"[send error → {phone}] {e}", flush=True)
+
 
 def send(phone, text):
     if os.getenv("DRY_RUN") == "1":
         print(f"[DRY_RUN → {phone}]\n{text}\n", flush=True)
         return
-    try:
-        r = httpx.post(f"https://graph.facebook.com/v21.0/{os.environ['WA_PHONE_NUMBER_ID']}/messages",
-                       headers={"Authorization": f"Bearer {os.environ['WA_TOKEN']}"}, timeout=10,
-                       json={"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}})
-        r.raise_for_status()
-    except Exception as e:  # never crash the webhook/scheduler on a failed send
-        print(f"[send error → {phone}] {e}", flush=True)
+    if isinstance(text, Menu):
+        # ponytail: row ids are plain numbers, so tapping a stale list from an earlier step picks that number
+        # in the current step; prefix ids with the state if that ever confuses customers.
+        rows = [{"id": str(i), "title": o[:24], **({"description": o[:72]} if len(o) > 24 else {})}
+                for i, o in enumerate(text.options[:10], 1)]
+        _post(phone, {"type": "interactive", "interactive": {
+            "type": "list", "body": {"text": text.body[:1024]},
+            "action": {"button": cfg()["messages"]["list_button"][:20], "sections": [{"title": "Opciones", "rows": rows}]}}})
+        return
+    _post(phone, {"type": "text", "text": {"body": text}})
+
+
+def notify(phone, key, c, **ctx):
+    """Staff-triggered/scheduled message. May land outside WhatsApp's 24h window, so it goes out as the
+    Meta-approved template from `wa_templates` when configured (plain text in DRY_RUN). Returns the text."""
+    text = fmt(c["templates"][key], c, **ctx)
+    t = (c.get("wa_templates") or {}).get(key)
+    if not t or os.getenv("DRY_RUN") == "1":
+        send(phone, text)
+        return text
+    values = {**c["business"], **ctx}
+    _post(phone, {"type": "template", "template": {
+        "name": t["name"], "language": {"code": t.get("language", "es_MX")},
+        "components": [{"type": "body", "parameters": [{"type": "text", "text": str(values[p])} for p in t["params"]]}]}})
+    return text
 
 
 def set_status(order_id, status, confirmed_slot=None):
@@ -210,11 +257,8 @@ def set_status(order_id, status, confirmed_slot=None):
              status, status, time.time(), confirmed_slot or None, order_id)
     if not rows:
         return None
-    tpl = c["templates"].get(status)
-    msgs = [fmt(tpl, c, order_id=order_id, confirmed_slot=rows[0]["confirmed_slot"] or rows[0]["time_window"])] if tpl else []
-    for m in msgs:
-        send(rows[0]["phone"], m)
-    return msgs
+    slot = rows[0]["confirmed_slot"] or rows[0]["time_window"]
+    return [notify(rows[0]["phone"], status, c, order_id=order_id, confirmed_slot=slot)] if status in c["templates"] else []
 
 
 def send_due_reviews(now=None):
@@ -224,5 +268,5 @@ def send_due_reviews(now=None):
     rows = q("update orders set review_sent=1 where status in ('listo','entregado') and review_sent=0 "
              "and ready_at<=? returning id, phone", cutoff)
     for r in rows:
-        send(r["phone"], fmt(c["templates"]["review"], c, order_id=r["id"]))
+        notify(r["phone"], "review", c, order_id=r["id"])
     return len(rows)

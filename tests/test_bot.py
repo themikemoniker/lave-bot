@@ -29,7 +29,7 @@ def test_faq_accents_case_and_typos():
 
 def test_unknown_logs_and_offers_menu():
     r = say("xyzzy plugh")
-    assert "no te entendí" in r[0] and "1️⃣ Precios" in r[1]
+    assert "no te entendí" in r[0] and "1. Precios" in r[1]
     assert bot.q("select text from unanswered")[0]["text"] == "xyzzy plugh"
 
 
@@ -81,11 +81,53 @@ def test_listo_notification_and_review_after_24h():
     for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
         say(m)
     msgs = bot.set_status(1, "listo")
-    assert "está listo" in msgs[0] and "Av. Aviación" in msgs[0]
+    assert "está lista" in msgs[0] and "Av. Aviación" in msgs[0]
     assert bot.send_due_reviews() == 0
     import time
     assert bot.send_due_reviews(now=time.time() + 25 * 3600) == 1
     assert bot.send_due_reviews(now=time.time() + 50 * 3600) == 0  # only once
+
+
+def test_notifications_use_meta_template_outside_dry_run(monkeypatch):
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
+        say(m)
+    monkeypatch.delenv("DRY_RUN")
+    posted = []
+    monkeypatch.setattr(bot, "_post", lambda phone, payload: posted.append((phone, payload)))
+    text = bot.set_status(1, "listo")[0]
+    phone, p = posted[0]
+    assert phone == P and p["type"] == "template" and p["template"]["name"] == "lave_ropa_lista"
+    params = [x["text"] for x in p["template"]["components"][0]["parameters"]]
+    assert params[0] == "1" and params[1].startswith("Av. Aviación")
+    assert "está lista" in text  # API/admin still get the rendered text
+
+
+def test_menus_go_out_as_whatsapp_lists_and_taps_drive_the_flow(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+    import hashlib, hmac, json
+    monkeypatch.delenv("DRY_RUN")
+    monkeypatch.setenv("WA_APP_SECRET", "s3cret")
+    posted = []
+    monkeypatch.setattr(bot, "_post", lambda phone, payload: posted.append(payload))
+    tap = lambda i: {"entry": [{"changes": [{"value": {"messages": [  # noqa: E731
+        {"from": P, "type": "interactive", "interactive": {"type": "list_reply", "list_reply": {"id": i}}}]}}]}]}
+    def post(payload):
+        body = json.dumps(payload).encode()
+        sig = "sha256=" + hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
+        assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
+
+    with TestClient(app.app) as client:
+        post({"entry": [{"changes": [{"value": {"messages": [
+            {"from": P, "type": "text", "text": {"body": "hola"}}]}}]}]})
+        menu = posted[-1]["interactive"]
+        assert posted[-1]["type"] == "interactive" and menu["type"] == "list"
+        assert [r["id"] for r in menu["action"]["sections"][0]["rows"]] == list("123456")
+        assert "1." not in menu["body"]["text"] and "🔒" in menu["body"]["text"]
+        post(tap("5"))  # Solicitar recolección
+        post(tap("5"))  # Limpieza de tenis
+    assert bot.q("select state, draft from users")[0]["state"] == "ask_location"
+    assert "tenis" in bot.q("select draft from users")[0]["draft"]
 
 
 def test_webhook_signature_and_message(monkeypatch):
@@ -105,6 +147,22 @@ def test_webhook_signature_and_message(monkeypatch):
         assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
     assert sent and "Somos Lavê" in sent[0][1]
     assert bot.q("select name from users")[0]["name"] == "Ana"
+
+
+def test_webhook_retry_is_deduped_and_statuses_ignored(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+    sent = []
+    monkeypatch.setattr(bot, "send", lambda phone, text: sent.append((phone, text)))
+    msg = {"entry": [{"changes": [{"value": {"messages": [
+        {"id": "wamid.1", "from": P, "type": "text", "text": {"body": "hola"}}]}}]}]}
+    status = {"entry": [{"changes": [{"value": {"statuses": [{"id": "wamid.out", "status": "read"}]}}]}]}
+    with TestClient(app.app) as client:
+        client.post("/webhook", json=msg)
+        n = len(sent)
+        client.post("/webhook", json=msg)  # Meta retry
+        client.post("/webhook", json=status)
+    assert n and len(sent) == n
 
 
 def test_old_db_gains_confirmed_slot(tmp_path, monkeypatch):

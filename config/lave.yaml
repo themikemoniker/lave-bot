@@ -23,28 +23,23 @@ no_words: ["no", "nel", "cancelar"]
 messages:
   welcome: |
     Hola 👋 Somos {name}, tu lavandería de confianza 🧺✨
-    ¿En qué te ayudamos hoy? Responde con el número:
-    1️⃣ Precios
-    2️⃣ Métodos de pago
-    3️⃣ Servicios
-    4️⃣ Horarios y ubicación
-    5️⃣ Solicitar recolección 🚗
-    6️⃣ Hablar con una persona
-
-    🔒 Solo guardamos tu número, nombre, ubicación y pedido para darte servicio.
+    ¿En qué te ayudamos hoy?
+  privacy: "🔒 Solo guardamos tu número, nombre, ubicación y pedido para darte servicio."
+  list_button: "Ver opciones"   # WhatsApp list button text (max 20 chars)
   unknown: "Uy, no te entendí bien 😅 Te dejo el menú para ayudarte mejor:"
   handoff: "¡Claro! 🙌 En un momento alguien de nuestro equipo te atiende por aquí."
   order_cancelled: "Listo, cancelamos la solicitud. Si quieres empezar de nuevo escribe *recolección* 😊"
   invalid_option: "Elige una de las opciones, por favor 🙏"
 
-# Menu number -> faq key, or a special action: "order" / "human".
+# Welcome menu: number -> label + action (faq key, or "human"). On WhatsApp every numbered list
+# (this menu, services, pickup slots) is sent as a tap-to-choose list; rows show 24 chars max.
 menu:
-  "1": precios
-  "2": metodos_pago
-  "3": servicios
-  "4": horarios
-  "5": recoleccion
-  "6": human
+  "1": {label: "Precios 💲", action: precios}
+  "2": {label: "Métodos de pago 💳", action: metodos_pago}
+  "3": {label: "Servicios 🧺", action: servicios}
+  "4": {label: "Horarios y ubicación 📍", action: horarios}
+  "5": {label: "Solicitar recolección 🚗", action: recoleccion}
+  "6": {label: "Hablar con una persona 🙋", action: human}
 
 # Keyword FAQ (mirrors staff quick replies). Keywords are matched accent/case-insensitive + fuzzy.
 faq:
@@ -63,7 +58,7 @@ faq:
       Así de fácil 😉
   bienvenida:
     keywords: [hola, buenas, buenos dias, buenas tardes, buenas noches, menu, inicio, hi]
-    reply: "{welcome}"
+    welcome: true
   precios:
     keywords: [precio, precios, costo, cuanto cuesta, cuanto cobran, tarifa, lista de precios]
     reply: |
@@ -107,7 +102,7 @@ faq:
     reply: "💼 ¡Tenemos plan para negocios! Lavamos toallas, uniformes y blancos con recolección programada. Cuéntanos qué tipo de negocio tienes y cuántas piezas a la semana, y te mandamos cotización 🙌"
   informes:
     keywords: [informes, informacion, info, mas informacion]
-    reply: "{welcome}"
+    welcome: true
   nuevos:
     keywords: [primera vez, nuevo cliente, soy nuevo, promocion, promo, descuento]
     reply: "🎉 ¡Bienvenido/a! Si es tu primera vez con nosotros pregunta por la promo de nuevo cliente (TODO_CONFIRM). Escribe *pedido* para empezar."
@@ -145,12 +140,20 @@ order:
 templates:
   programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) 🕒 {confirmed_slot}. Te avisamos cuando esté lista 🧺"
   listo: |
-    🎉 ¡Tu pedido #{order_id} está listo!
-    Puedes recogerlo en {address}
+    🎉 ¡Tu ropa está lista! (solicitud #{order_id})
+    Te la llevamos en el horario acordado 🚗, o si prefieres pasa por ella a {address}
     🕗 {hours}
-    (Si pediste entrega a domicilio, vamos en camino 🚗)
   review: |
     Hola 👋 ¿Cómo te fue con tu pedido en {name}? 💙
     Nos ayudarías muchísimo con una reseña de 1 minuto ⭐⭐⭐⭐⭐
     {review_link}
     ¡Gracias por tu confianza!
+
+# Meta-approved WhatsApp templates for the messages above. WhatsApp only allows free-form text within 24h of
+# the customer's last message, and "listo"/review often land later. Register each one in WhatsApp Manager >
+# Message templates (category: Utility, language: Spanish (MEX)) with the same wording as `templates`,
+# replacing each {placeholder} with {{1}}, {{2}}... in `params` order. Delete an entry to send plain text.
+wa_templates:   # TODO_CONFIRM names once Meta approves them
+  programado: {name: lave_agenda_confirmada, language: es_MX, params: [order_id, confirmed_slot]}
+  listo: {name: lave_ropa_lista, language: es_MX, params: [order_id, address, hours]}
+  review: {name: lave_resena, language: es_MX, params: [name, review_link]}
