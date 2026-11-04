@@ -30,6 +30,22 @@ Status hook for the ERP: `curl -XPOST localhost:8000/orders/1/status -H 'content
 | `DB_PATH` | SQLite file (default `lave.db`) |
 | `LLM_FALLBACK=1`, `ANTHROPIC_API_KEY`, `LLM_MODEL` | optional: unknown messages get an answer drawn only from the YAML (default model `claude-opus-5-5`; `claude-haiku-5-5` is ~40x cheaper) |
 
+## Run with Docker (VPS or laptop)
+```bash
+cp .env.example .env                  # fill it in; keep DRY_RUN=1 to try it first
+docker build -t lave-bot .
+docker run -d --name lave --restart unless-stopped -p 8000:8000 --env-file .env \
+  -v lave-data:/data -v "$PWD/config:/app/config" lave-bot
+open http://localhost:8000/admin       # add ?token=... if ADMIN_TOKEN is set
+```
+The SQLite DB lives in the `lave-data` volume, so it survives rebuilds. Mounting `config/` lets the owner edit `lave.yaml` without rebuilding. Logs (including DRY_RUN messages): `docker logs -f lave`.
+
+**HTTPS for the Meta webhook (free, no open ports):** install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) (`brew install cloudflared` or the `.deb`), then
+```bash
+cloudflared tunnel --url http://localhost:8000   # prints https://<random>.trycloudflare.com
+```
+Use `https://<random>.trycloudflare.com/webhook` as the webhook URL (step 3 below). The quick-tunnel URL changes every time cloudflared restarts. For a URL that stays the same, use a free named tunnel on a domain you own in Cloudflare: `cloudflared tunnel login && cloudflared tunnel create lave && cloudflared tunnel route dns lave bot.example.com && cloudflared tunnel run --url http://localhost:8000 lave`.
+
 ## Connect real WhatsApp
 1. developers.facebook.com → create app → add **WhatsApp** → note the test number's *Phone number ID* and a token (use a System User permanent token for production).
 2. Deploy somewhere with HTTPS (any small VPS, or `cloudflared tunnel --url localhost:8000` for testing).
