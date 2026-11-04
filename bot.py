@@ -1,48 +1,47 @@
-"""Lavê WhatsApp bot core: transport-independent handler, order state machine, SQLite, outbound send."""
+"""Lavê WhatsApp bot core: transport-independent handler, order state machine, outbound send. Storage: store.py."""
 import json
 import os
 import re
-import sqlite3
 import time
 import unicodedata
-from contextlib import closing
 from pathlib import Path
 
 import httpx
 import yaml
 from rapidfuzz import fuzz, process
 
+from store import Conflict, make_store
+
 ROOT = Path(__file__).parent
 STATUSES = ("nuevo", "programado", "listo", "entregado")
-SCHEMA = """
-create table if not exists users(phone text primary key, name text, state text default 'idle',
-  draft text default '{}', needs_human int default 0, unknown_count int default 0);
-create table if not exists orders(id integer primary key, phone text, name text, service text,
-  location text, time_window text, status text default 'nuevo', created_at real, ready_at real,
-  review_sent int default 0, confirmed_slot text);
-create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
-create table if not exists seen(id text primary key);  -- webhook message ids already processed
-create table if not exists messages(id integer primary key, phone text, who text, text text, created_at real);
-"""
+db = make_store()
+_s3 = {"at": 0, "cfg": None}
 
 
 def cfg():
-    # Re-read every call so owners can edit the YAML without restarting.
+    """lave.yaml from S3 (CONFIG_BUCKET/CONFIG_KEY, cached 60s) or the local file, re-read so owners can edit it
+    without a restart. If S3 fails we keep the last good copy, or fall back to the bundled file."""
+    if bucket := os.getenv("CONFIG_BUCKET"):
+        if time.time() - _s3["at"] > 60:
+            try:
+                import boto3
+                body = boto3.client("s3").get_object(Bucket=bucket, Key=os.getenv("CONFIG_KEY", "lave.yaml"))["Body"].read()
+                _s3.update(at=time.time(), cfg=yaml.safe_load(body))
+            except Exception as e:
+                print(f"[config] S3 read failed, using {'cached' if _s3['cfg'] else 'local'} copy: {e}", flush=True)
+        if _s3["cfg"]:
+            return _s3["cfg"]
     return yaml.safe_load(Path(os.getenv("LAVE_CONFIG", ROOT / "config/lave.yaml")).read_text(encoding="utf-8"))
 
 
-def q(sql, *args):
-    # ponytail: connection per query, fine for a single laundry; pool if traffic grows.
-    with closing(sqlite3.connect(os.getenv("DB_PATH", ROOT / "lave.db"))) as c:
-        c.row_factory = sqlite3.Row
-        c.executescript(SCHEMA)
-        try:  # self-heal DBs created before confirmed_slot existed
-            c.execute("alter table orders add column confirmed_slot text")
-        except sqlite3.OperationalError:
-            pass  # duplicate column: already there
-        rows = c.execute(sql, args).fetchall()
-        c.commit()
-        return rows
+def retry(fn, tries=5):
+    """Run a read-modify-write of a user again if another message/staff action saved that user in between."""
+    for _ in range(tries - 1):
+        try:
+            return fn()
+        except Conflict:
+            pass
+    return fn()
 
 
 def norm(s):
@@ -99,17 +98,26 @@ def pick(t, options):
     return m[0] if m else None
 
 
-def set_state(phone, state, draft=None):
-    q("update users set state=?, draft=?, unknown_count=0 where phone=?", state, json.dumps(draft or {}), phone)
+def save(u, **changes):
+    u.update(changes)
+    db.save_user(u)  # raises Conflict if the user changed since we read it
 
 
-def handoff(phone, c, msg=True):
-    q("update users set needs_human=1, state='idle', draft='{}' where phone=?", phone)
+def edit_user(phone, **changes):
+    retry(lambda: save(db.user(phone), **changes))
+
+
+def set_state(u, state, draft=None):
+    save(u, state=state, draft=json.dumps(draft or {}), unknown_count=0)
+
+
+def handoff(u, c, msg=True):
+    save(u, needs_human=1, state="idle", draft="{}")
     return [fmt(c["messages"]["handoff"], c)] if msg else []
 
 
 def reset_user(phone):
-    q("update users set needs_human=0, unknown_count=0, state='idle', draft='{}' where phone=?", phone)
+    edit_user(phone, needs_human=0, unknown_count=0, state="idle", draft="{}")
 
 
 # ---- conversation log, shared by the bot, /admin and the WhatsApp Business app (coexistence echoes) ----
@@ -117,24 +125,22 @@ WHO = ("customer", "bot", "staff_app", "staff_admin")
 
 
 def log(phone, who, text):
-    q("insert into messages(phone, who, text, created_at) values(?,?,?,?)", phone, who, str(text), time.time())
+    db.log(phone, who, str(text))
 
 
 def staff_message(phone, text, who):
     """A person replied (Business app echo or /admin): keep it in the thread and keep the bot out of the chat."""
-    q("insert or ignore into users(phone) values(?)", phone)
-    q("update users set needs_human=1, state='idle', draft='{}' where phone=?", phone)
+    edit_user(phone, needs_human=1, state="idle", draft="{}")
     log(phone, who, text)
 
 
 def last_customer_at(phone):
-    r = q("select max(created_at) t from messages where phone=? and who='customer'", phone)
-    return r[0]["t"] if r else None
+    return max((m["created_at"] for m in db.messages(phone) if m["who"] == "customer"), default=None)
 
 
 def purge_messages(now=None):
     days = cfg().get("message_retention_days", 90)
-    return len(q("delete from messages where created_at<? returning id", (now or time.time()) - days * 86400))
+    return db.purge_messages((now or time.time()) - days * 86400)
 
 
 def handle_message(phone, text=None, location=None, name=None):
@@ -145,7 +151,7 @@ def handle_message(phone, text=None, location=None, name=None):
             f"https://maps.google.com/?q={location['latitude']},{location['longitude']}"])))
     else:
         log(phone, "customer", text or "")
-    replies = _handle(phone, text, location, name)
+    replies = retry(lambda: _handle(phone, text, location, name))
     for r in replies:
         log(phone, "bot", r)
     return replies
@@ -153,21 +159,20 @@ def handle_message(phone, text=None, location=None, name=None):
 
 def _handle(phone, text, location, name):
     c = cfg()
-    q("insert or ignore into users(phone) values(?)", phone)
-    if name:
-        q("update users set name=? where phone=?", name, phone)
-    u = q("select * from users where phone=?", phone)[0]
+    u = db.user(phone)
+    if name and name != u["name"]:
+        save(u, name=name)
     if u["needs_human"]:
         return []  # staff owns this chat until reset
     t = norm(text)
 
     if hits(t, c["human_keywords"], c) or (t == "6" and u["state"] == "idle"):
-        return handoff(phone, c)
+        return handoff(u, c)
     if u["state"] != "idle":
         if t in map(norm, c["cancel_keywords"]):
-            set_state(phone, "idle")
+            set_state(u, "idle")
             return [fmt(c["messages"]["order_cancelled"], c)]
-        return order_step(phone, u, t, text, location, c)
+        return order_step(u, t, text, location, c)
 
     action = (c["menu"].get(t) or {}).get("action")
     if not action:
@@ -175,40 +180,41 @@ def _handle(phone, text, location, name):
         action = best[0] if best[1] >= c["match_threshold"] else None
 
     if action == "human":
-        return handoff(phone, c)
+        return handoff(u, c)
     if action:
-        q("update users set unknown_count=0 where phone=?", phone)
+        if u["unknown_count"]:
+            save(u, unknown_count=0)
         if c["faq"][action].get("welcome"):
             return [welcome(c)]
         reply = [fmt(c["faq"][action]["reply"], c)]
         if c["faq"][action].get("start_order"):
-            set_state(phone, "ask_service")
+            set_state(u, "ask_service")
             reply.append(numbered(fmt(c["order"]["start"], c), c["order"]["services"]))
         if c["faq"][action].get("handoff"):
-            handoff(phone, c, msg=False)
+            handoff(u, c, msg=False)
         return reply
 
     # Unknown: log it, try optional LLM, else menu; repeated misses -> human.
-    q("insert into unanswered(phone, text, created_at) values(?,?,?)", phone, text or "[ubicación]", time.time())
+    db.add_unanswered(phone, text or "[ubicación]")
     from llm import llm_answer  # optional fallback, no-op unless configured
     answer = llm_answer(text, c) if text else None
     if answer:
         return [answer]
     n = u["unknown_count"] + 1
-    q("update users set unknown_count=? where phone=?", n, phone)
+    save(u, unknown_count=n)
     if n >= c["unknown_before_handoff"]:
-        return handoff(phone, c)
+        return handoff(u, c)
     return [fmt(c["messages"]["unknown"], c), welcome(c)]
 
 
-def order_step(phone, u, t, raw, location, c):
+def order_step(u, t, raw, location, c):
     o, d, st = c["order"], json.loads(u["draft"]), u["state"]
     invalid = fmt(c["messages"]["invalid_option"], c)
 
     if st == "ask_service":
         if not (s := pick(t, o["services"])):
             return [invalid, numbered(fmt(o["start"], c), o["services"])]
-        set_state(phone, "ask_location", {**d, "service": s})
+        set_state(u, "ask_location", {**d, "service": s})
         return [o["ask_location"]]
 
     if st == "ask_location":
@@ -219,29 +225,27 @@ def order_step(phone, u, t, raw, location, c):
             d["location"] = raw.strip()
         else:
             return [o["ask_location"]]
-        set_state(phone, "ask_time", d)
+        set_state(u, "ask_time", d)
         return [numbered(o["ask_time"], o["time_windows"])]
 
     if st == "ask_time":
         if not t:
             return [numbered(o["ask_time"], o["time_windows"])]
         d["time_window"] = pick(t, o["time_windows"]) or raw.strip()  # free text like "a las 5" is fine
-        set_state(phone, "confirm", d)
+        set_state(u, "confirm", d)
         return [fmt(o["confirm"], c, **d)]
 
     if st == "confirm":
         if t in map(norm, c["yes_words"]):
-            oid = q("insert into orders(phone, name, service, location, time_window, created_at) "
-                    "values(?,?,?,?,?,?) returning id", phone, u["name"], d["service"],
-                    d["location"], d["time_window"], time.time())[0]["id"]
-            set_state(phone, "idle")
+            set_state(u, "idle")  # first: a version conflict retries the turn before the order exists
+            oid = db.add_order(u["phone"], u["name"], d["service"], d["location"], d["time_window"])
             return [fmt(o["saved"], c, order_id=oid)]
         if t in map(norm, c["no_words"]):
-            set_state(phone, "idle")
+            set_state(u, "idle")
             return [fmt(c["messages"]["order_cancelled"], c)]
         return [fmt(o["confirm"], c, **d)]
 
-    set_state(phone, "idle")  # unknown state: recover
+    set_state(u, "idle")  # unknown state: recover
     return [welcome(c)]
 
 
@@ -294,21 +298,18 @@ def notify(phone, key, c, **ctx):
 def set_status(order_id, status, confirmed_slot=None):
     """ERP/staff hook. Returns the messages sent, or None if the order doesn't exist."""
     c = cfg()
-    rows = q("update orders set status=?, ready_at=case when ? in ('listo', 'entregado') then coalesce(ready_at, ?) else ready_at end, "
-             "confirmed_slot=coalesce(?, confirmed_slot) where id=? returning phone, time_window, confirmed_slot",
-             status, status, time.time(), confirmed_slot or None, order_id)
-    if not rows:
+    o = db.set_status(order_id, status, confirmed_slot or None, time.time())
+    if not o:
         return None
-    slot = rows[0]["confirmed_slot"] or rows[0]["time_window"]
-    return [notify(rows[0]["phone"], status, c, order_id=order_id, confirmed_slot=slot)] if status in c["templates"] else []
+    slot = o["confirmed_slot"] or o["time_window"]
+    return [notify(o["phone"], status, c, order_id=order_id, confirmed_slot=slot)] if status in c["templates"] else []
 
 
 def send_due_reviews(now=None):
     c = cfg()
     cutoff = (now or time.time()) - c["business"]["review_delay_hours"] * 3600
     # ponytail: claim-then-send; a failed send skips that review rather than risking duplicates.
-    rows = q("update orders set review_sent=1 where status in ('listo','entregado') and review_sent=0 "
-             "and ready_at<=? returning id, phone", cutoff)
+    rows = db.claim_due_reviews(cutoff)
     for r in rows:
         notify(r["phone"], "review", c, order_id=r["id"])
     return len(rows)

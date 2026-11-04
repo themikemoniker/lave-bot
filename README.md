@@ -16,6 +16,7 @@ Open-source, near-zero-cost WhatsApp bot for Lavê (Zapopan). Rules + YAML confi
 - [x] Webhook signature check, Meta retry dedupe, `DRY_RUN`, terminal simulator
 - [x] Optional LLM fallback that answers only from the YAML
 - [x] Docker + cloudflared deploy; showcase PDF generated from real bot output
+- [x] AWS serverless deploy (SAM: Lambda, DynamoDB, S3 config, EventBridge, SSM, optional Bedrock)
 
 **To go live**
 - [ ] Owner confirms every `TODO_CONFIRM` (prices, slots, payment methods, promos and the review link are placeholders)
@@ -39,9 +40,9 @@ Open-source, near-zero-cost WhatsApp bot for Lavê (Zapopan). Rules + YAML confi
 ## Setup
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest -q          # 20 tests
+.venv/bin/python -m pytest -q          # every test runs twice: SQLite and DynamoDB (moto)
 ```
-All business text is in `config/lave.yaml` and is re-read on every message, so edits apply without a restart.
+All business text is in `config/lave.yaml` (or S3 on AWS, see below) and is re-read on every message, so edits apply without a restart.
 **Before going live:** search for `TODO_CONFIRM` (prices, payment methods, promos, review link, address, hours) and fill it in with the owner.
 
 ## Try it with no Meta account
@@ -62,7 +63,11 @@ Status hook for the ERP: `curl -XPOST localhost:8000/orders/1/status -H 'content
 | `WA_VERIFY_TOKEN` | any string; must match what you enter in the Meta webhook setup |
 | `ADMIN_TOKEN` | protects `/admin`, `/orders/*/status`, `/users/*/reset` (open `/admin?token=...`) |
 | `DB_PATH` | SQLite file (default `lave.db`) |
+| `STORE=dynamo`, `TABLE_PREFIX` | use DynamoDB tables `<prefix>users`, `orders`, `messages`, `unanswered`, `seen` instead of SQLite |
+| `CONFIG_BUCKET`, `CONFIG_KEY` | read `lave.yaml` from S3 (cached 60 s; falls back to the local file) |
+| `SSM_PREFIX` | load the secrets above from SSM Parameter Store at startup (`/lave-bot/WA_TOKEN`, ...) |
 | `LLM_FALLBACK=1`, `ANTHROPIC_API_KEY`, `LLM_MODEL` | optional: unknown messages get an answer drawn only from the YAML (default model `claude-opus-5-5`; `claude-haiku-5-5` is ~40x cheaper) |
+| `LLM_BACKEND=bedrock` | call the LLM through Amazon Bedrock (Converse API, AWS credentials) instead of `ANTHROPIC_API_KEY`; default model `anthropic.claude-opus-5-5` |
 
 ## Run with Docker (VPS or laptop)
 ```bash
@@ -80,9 +85,28 @@ cloudflared tunnel --url http://localhost:8000   # prints https://<random>.trycl
 ```
 Use `https://<random>.trycloudflare.com/webhook` as the webhook URL (step 3 below). The quick-tunnel URL changes every time cloudflared restarts. For a URL that stays the same, use a free named tunnel on a domain you own in Cloudflare: `cloudflared tunnel login && cloudflared tunnel create lave && cloudflared tunnel route dns lave bot.example.com && cloudflared tunnel run --url http://localhost:8000 lave`.
 
+## Run on AWS (serverless)
+Lambda behind a Function URL, DynamoDB (on-demand), `lave.yaml` in S3, an EventBridge rule every 15 min for review
+requests, secrets in SSM Parameter Store. All in `template.yaml`. Needs the [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and AWS credentials.
+```bash
+# 1. secrets (SecureString, default aws/ssm key)
+for k in WA_TOKEN WA_PHONE_NUMBER_ID WA_APP_SECRET WA_VERIFY_TOKEN ADMIN_TOKEN; do
+  read -rsp "$k: " v; echo; aws ssm put-parameter --name "/lave-bot/$k" --type SecureString --value "$v" --overwrite
+done
+# 2. build and deploy (copies this folder minus .venv/.env/.git: delete any local *.db first so no customer data ships)
+sam build && sam deploy --guided       # stack name e.g. lave-bot; accept the defaults; "BotFunction has no authentication" → y
+# 3. upload the config (the bundled copy is the fallback until you do); re-upload to edit, live within 60 s
+aws s3 cp config/lave.yaml "s3://$(aws cloudformation describe-stacks --stack-name lave-bot \
+  --query "Stacks[0].Outputs[?OutputKey=='ConfigBucket'].OutputValue" --output text)/lave.yaml"
+```
+The `WebhookUrl` output is what goes into Meta (step 3 below). `/admin` refuses requests until `ADMIN_TOKEN` is set.
+Webhooks are handled synchronously; if Meta retries a slow one, the message id dedupe drops the copy. Parameters:
+`DryRun`, `LlmFallback`, `BedrockModelId` (enable model access in the Bedrock console first). Users, orders are kept
+if the stack is deleted (`DeletionPolicy: Retain`). Logs: `sam logs -n BotFunction --stack-name lave-bot --tail`.
+
 ## Connect real WhatsApp
 1. developers.facebook.com → create app → add **WhatsApp** → note the test number's *Phone number ID* and a token (use a System User permanent token for production).
-2. Deploy somewhere with HTTPS (any small VPS, or `cloudflared tunnel --url localhost:8000` for testing).
+2. Deploy somewhere with HTTPS (any small VPS, AWS as above, or `cloudflared tunnel --url localhost:8000` for testing).
 3. WhatsApp → Configuration → Webhook: URL `https://<host>/webhook`, verify token = `WA_VERIFY_TOKEN`; subscribe to `messages`.
 4. Run `uvicorn app:app --host 0.0.0.0 --port 8000` with the env vars above (no `DRY_RUN`).
 5. **24h rule / templates:** WhatsApp only allows free-form messages within 24h of the customer's last message, and "programado", "listo", "entregado" and the review request often land later. They are sent as Meta-approved templates listed under `wa_templates` in `config/lave.yaml`. In WhatsApp Manager > Message templates, create each one (category *Utility*, Spanish (MEX)) with the wording from `templates`, using `{{1}}`, `{{2}}`… in `params` order. Until they're approved, those sends fail and are logged as `[send error]`; customer replies inside the 24h window still work. In `DRY_RUN` they print as plain text.

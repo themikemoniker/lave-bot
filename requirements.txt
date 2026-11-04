@@ -5,3 +5,6 @@ rapidfuzz
 httpx
 pytest
 anthropic
+mangum
+boto3
+moto[dynamodb,s3]
