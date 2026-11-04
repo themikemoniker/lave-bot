@@ -186,17 +186,36 @@ def order_step(phone, u, t, raw, location, c):
 
 # ---- outbound (status notifications, reviews) ----
 
+def _post(phone, payload):
+    try:
+        r = httpx.post(f"https://graph.facebook.com/v21.0/{os.environ['WA_PHONE_NUMBER_ID']}/messages",
+                       headers={"Authorization": f"Bearer {os.environ['WA_TOKEN']}"}, timeout=10,
+                       json={"messaging_product": "whatsapp", "to": phone, **payload})
+        r.raise_for_status()
+    except Exception as e:  # never crash the webhook/scheduler on a failed send
+        print(f"[send error → {phone}] {e}", flush=True)
+
+
 def send(phone, text):
     if os.getenv("DRY_RUN") == "1":
         print(f"[DRY_RUN → {phone}]\n{text}\n", flush=True)
         return
-    try:
-        r = httpx.post(f"https://graph.facebook.com/v21.0/{os.environ['WA_PHONE_NUMBER_ID']}/messages",
-                       headers={"Authorization": f"Bearer {os.environ['WA_TOKEN']}"}, timeout=10,
-                       json={"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}})
-        r.raise_for_status()
-    except Exception as e:  # never crash the webhook/scheduler on a failed send
-        print(f"[send error → {phone}] {e}", flush=True)
+    _post(phone, {"type": "text", "text": {"body": text}})
+
+
+def notify(phone, key, c, **ctx):
+    """Staff-triggered/scheduled message. May land outside WhatsApp's 24h window, so it goes out as the
+    Meta-approved template from `wa_templates` when configured (plain text in DRY_RUN). Returns the text."""
+    text = fmt(c["templates"][key], c, **ctx)
+    t = (c.get("wa_templates") or {}).get(key)
+    if not t or os.getenv("DRY_RUN") == "1":
+        send(phone, text)
+        return text
+    values = {**c["business"], **ctx}
+    _post(phone, {"type": "template", "template": {
+        "name": t["name"], "language": {"code": t.get("language", "es_MX")},
+        "components": [{"type": "body", "parameters": [{"type": "text", "text": str(values[p])} for p in t["params"]]}]}})
+    return text
 
 
 def set_status(order_id, status):
@@ -206,11 +225,7 @@ def set_status(order_id, status):
              "where id=? returning phone", status, status, time.time(), order_id)
     if not rows:
         return None
-    tpl = c["templates"].get(status)
-    msgs = [fmt(tpl, c, order_id=order_id)] if tpl else []
-    for m in msgs:
-        send(rows[0]["phone"], m)
-    return msgs
+    return [notify(rows[0]["phone"], status, c, order_id=order_id)] if status in c["templates"] else []
 
 
 def send_due_reviews(now=None):
@@ -220,5 +235,5 @@ def send_due_reviews(now=None):
     rows = q("update orders set review_sent=1 where status in ('listo','entregado') and review_sent=0 "
              "and ready_at<=? returning id, phone", cutoff)
     for r in rows:
-        send(r["phone"], fmt(c["templates"]["review"], c, order_id=r["id"]))
+        notify(r["phone"], "review", c, order_id=r["id"])
     return len(rows)

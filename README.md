@@ -35,7 +35,7 @@ Status hook for the ERP: `curl -XPOST localhost:8000/orders/1/status -H 'content
 2. Deploy somewhere with HTTPS (any small VPS, or `cloudflared tunnel --url localhost:8000` for testing).
 3. WhatsApp → Configuration → Webhook: URL `https://<host>/webhook`, verify token = `WA_VERIFY_TOKEN`; subscribe to `messages`.
 4. Run `uvicorn app:app --host 0.0.0.0 --port 8000` with the env vars above (no `DRY_RUN`).
-5. **24h rule:** WhatsApp only allows free-form messages within 24h of the customer's last message. The "listo" and review messages may land outside that window, so register them as approved *templates* in Meta and switch `bot.send` to template sends for those two.
+5. **24h rule / templates:** WhatsApp only allows free-form messages within 24h of the customer's last message, and "programado", "listo" and the review request often land later. They are sent as Meta-approved templates listed under `wa_templates` in `config/lave.yaml`. In WhatsApp Manager > Message templates, create each one (category *Utility*, Spanish (MEX)) with the wording from `templates`, using `{{1}}`, `{{2}}`… in `params` order. Until they're approved, those sends fail and are logged as `[send error]`; customer replies inside the 24h window still work. In `DRY_RUN` they print as plain text.
 
 ## Privacy
 We store only phone, WhatsApp profile name, the location/address, and order details. The welcome message says so.

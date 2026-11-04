@@ -81,11 +81,25 @@ def test_listo_notification_and_review_after_24h():
     for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
         say(m)
     msgs = bot.set_status(1, "listo")
-    assert "está listo" in msgs[0] and "Av. Aviación" in msgs[0]
+    assert "está lista" in msgs[0] and "Av. Aviación" in msgs[0]
     assert bot.send_due_reviews() == 0
     import time
     assert bot.send_due_reviews(now=time.time() + 25 * 3600) == 1
     assert bot.send_due_reviews(now=time.time() + 50 * 3600) == 0  # only once
+
+
+def test_notifications_use_meta_template_outside_dry_run(monkeypatch):
+    for m in ["pedido", "1", "Calle Falsa 123, Zapopan", "1", "si"]:
+        say(m)
+    monkeypatch.delenv("DRY_RUN")
+    posted = []
+    monkeypatch.setattr(bot, "_post", lambda phone, payload: posted.append((phone, payload)))
+    text = bot.set_status(1, "listo")[0]
+    phone, p = posted[0]
+    assert phone == P and p["type"] == "template" and p["template"]["name"] == "lave_ropa_lista"
+    params = [x["text"] for x in p["template"]["components"][0]["parameters"]]
+    assert params[0] == "1" and params[1].startswith("Av. Aviación")
+    assert "está lista" in text  # API/admin still get the rendered text
 
 
 def test_webhook_signature_and_message(monkeypatch):
