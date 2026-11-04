@@ -83,6 +83,9 @@ todos = [t for ln in (ROOT / "config/lave.yaml").read_text().splitlines()
          and (t := re.sub(r"^(reply: )?[\"']?|[\"']$", "", re.sub(r"\s+#.*$", "", ln).strip(" -•")).strip())
          and not t.endswith(":")]
 todos = [t.replace("\"", "") for t in todos]
+# Block-scalar text (e.g. the price list) can't carry inline comments, so it's flagged by a "# TODO_CONFIRM: ..." line.
+todos += [ln.split("TODO_CONFIRM:", 1)[1].strip() for ln in (ROOT / "config/lave.yaml").read_text().splitlines()
+          if ln.strip().startswith("# TODO_CONFIRM:")]
 n_tests = (ROOT / "tests/test_bot.py").read_text().count("def test_")
 n_lines = sum(len(p.read_text().splitlines()) for p in ROOT.glob("*.py"))
 n_kw = sum(len(f["keywords"]) for f in c["faq"].values())

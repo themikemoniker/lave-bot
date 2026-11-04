@@ -1,12 +1,13 @@
 # All business content lives here. Text can use {placeholders} from `business`.
-# Search for TODO_CONFIRM and fill with the owner before going live.
+# Search for TODO_CONFIRM and fill with the owner before going live. Prices, slots and the review link are
+# realistic placeholders so the bot reads well in demos; customers never see the TODO_CONFIRM comments.
 
 business:
   name: "Lavê"
   address: "Av. Aviación 4284-1, Jardín Real, Zapopan, Jal."   # TODO_CONFIRM with owner
   hours: "Lunes a viernes 8:00–19:00, sábado 8:00–18:00"         # TODO_CONFIRM with owner
   maps_link: "https://maps.google.com/?q=Av.+Aviación+4284+Jardín+Real+Zapopan"  # TODO_CONFIRM
-  review_link: "https://g.page/r/TODO_CONFIRM/review"            # TODO_CONFIRM: Google review link
+  review_link: "https://www.google.com/maps/search/?api=1&query=Lav%C3%AA+Zapopan"  # TODO_CONFIRM: Google review link
   review_delay_hours: 24
 
 # Fuzzy-match threshold (0-100). Below this the message counts as "unknown".
@@ -60,20 +61,21 @@ faq:
     keywords: [hola, buenas, buenos dias, buenas tardes, buenas noches, menu, inicio, hi]
     welcome: true
   precios:
+    # TODO_CONFIRM: precios de ejemplo, confirmar cada uno con el dueño
     keywords: [precio, precios, costo, cuanto cuesta, cuanto cobran, tarifa, lista de precios]
     reply: |
-      💲 Precios (TODO_CONFIRM con el dueño):
-      • Lavandería por kilo: $TODO_CONFIRM /kg (mínimo 3 kg)
-      • Auto-lavado (lavadora): $TODO_CONFIRM por carga
-      • Tintorería: desde $TODO_CONFIRM por prenda
-      • Planchado: $TODO_CONFIRM por prenda / docena $TODO_CONFIRM
-      • Edredones y cobijas: desde $TODO_CONFIRM
-      • Limpieza de tenis: $TODO_CONFIRM por par
-      • Recolección y entrega: $TODO_CONFIRM
+      💲 Precios:
+      • Lavandería por kilo: $35 /kg (mínimo 3 kg)
+      • Auto-lavado (lavadora): $60 por carga
+      • Tintorería: desde $90 por prenda
+      • Planchado: $20 por prenda / docena $200
+      • Edredones y cobijas: desde $150
+      • Limpieza de tenis: $180 por par
+      • Recolección y entrega: $50 (gratis en pedidos desde $300)
       ¿Quieres hacer un pedido? Escribe *pedido* 🧺
   metodos_pago:
     keywords: [metodos de pago, pago, pagar, tarjeta, efectivo, transferencia, aceptan tarjeta]
-    reply: "💳 Aceptamos efectivo, tarjeta de débito/crédito y transferencia. (TODO_CONFIRM)"
+    reply: "💳 Aceptamos efectivo, tarjeta de débito/crédito y transferencia."  # TODO_CONFIRM
   servicios:
     keywords: [servicios, que hacen, otros servicios, que servicios, ofrecen]
     reply: |
@@ -105,10 +107,10 @@ faq:
     welcome: true
   nuevos:
     keywords: [primera vez, nuevo cliente, soy nuevo, promocion, promo, descuento]
-    reply: "🎉 ¡Bienvenido/a! Si es tu primera vez con nosotros pregunta por la promo de nuevo cliente (TODO_CONFIRM). Escribe *pedido* para empezar."
+    reply: "🎉 ¡Bienvenido/a! Si es tu primera vez con nosotros pregunta por la promo de nuevo cliente. Escribe *pedido* para empezar."  # TODO_CONFIRM: what is the promo?
   estudiantes:
     keywords: [tec, estudiante, militar, militares, descuento estudiante]
-    reply: "🎓🪖 Atendemos con gusto a estudiantes del Tec, militares y oficinas cercanas. Pregunta por descuentos con tu credencial (TODO_CONFIRM)."
+    reply: "🎓🪖 Atendemos con gusto a estudiantes del Tec, militares y oficinas cercanas. Pregunta por descuentos con tu credencial."  # TODO_CONFIRM
   gracias:
     keywords: [gracias, muchas gracias, ok gracias, perfecto gracias]
     reply: "¡Con gusto! 💙 Aquí estamos para lo que necesites."
@@ -125,9 +127,9 @@ order:
   ask_location: "📍 Compártenos tu *ubicación* de WhatsApp (clip 📎 > Ubicación) o escribe tu dirección completa."
   ask_time: "🕒 ¿En qué horario te queda mejor para la recolección?"
   time_windows:   # TODO_CONFIRM pickup windows with the owner
-    - "Mañana 9:00–12:00 (TODO_CONFIRM)"
-    - "Mediodía 12:00–15:00 (TODO_CONFIRM)"
-    - "Tarde 15:00–18:00 (TODO_CONFIRM)"
+    - "Mañana 9:00–12:00"      # TODO_CONFIRM
+    - "Mediodía 12:00–15:00"   # TODO_CONFIRM
+    - "Tarde 15:00–18:00"      # TODO_CONFIRM
   confirm: |
     Revisa tu solicitud de recolección 👇
     • Servicio: {service}
