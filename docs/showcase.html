@@ -1,0 +1,195 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><title>Lavê WhatsApp bot</title>
+<style>
+:root {
+  --brand: #1f4e8c;      /* primary */
+  --accent: #29a3d6;     /* highlights */
+  --ink: #1d2330;
+  --muted: #6b7385;
+  --paper: #ffffff;
+  --soft: #f2f5fa;
+  --chat-bg: #efe7dd; --chat-me: #d9fdd3; --chat-bot: #ffffff;
+  --font: -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+@page { size: Letter; margin: 0.55in; }
+* { box-sizing: border-box; }
+body { font-family: var(--font); color: var(--ink); margin: 0; font-size: 10.5pt; line-height: 1.45; }
+section { break-before: page; }
+section:first-child { break-before: auto; }
+h1 { font-size: 28pt; margin: 0 0 4px; color: var(--brand); letter-spacing: -0.5px; }
+h2 { font-size: 18pt; color: var(--brand); margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 18px; }
+.hero { background: linear-gradient(135deg, var(--brand), var(--accent)); color: #fff; border-radius: 18px;
+        padding: 22px 26px; margin-bottom: 14px; }
+.hero h1 { color: #fff; } .hero p { font-size: 13pt; margin: 6px 0 0; opacity: .95; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.stat { background: var(--soft); border-radius: 12px; padding: 14px; }
+.stat b { display: block; font-size: 22pt; color: var(--brand); } .stat span { color: var(--muted); font-size: 9.5pt; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.card { border: 1px solid #e3e7ef; border-radius: 12px; padding: 14px 16px; }
+.card h3 { margin: 0 0 6px; font-size: 12pt; color: var(--brand); }
+.card ul { margin: 0; padding-left: 18px; }
+.flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 10px 0 12px; }
+.step { background: var(--soft); border-radius: 12px; padding: 12px; position: relative; font-size: 9.5pt; }
+.step:not(:last-child)::after { content: "→"; position: absolute; right: -11px; top: 18px; color: var(--accent);
+        font-weight: bold; }
+.step p { margin: 4px 0 6px; color: var(--muted); }
+.num { width: 26px; height: 26px; border-radius: 50%; background: var(--brand); color: #fff; display: grid;
+        place-items: center; font-weight: bold; margin-bottom: 6px; }
+code { font-size: 8.5pt; background: #fff; border-radius: 4px; padding: 1px 5px; color: var(--brand); }
+.life { display: flex; align-items: center; gap: 8px; margin: 8px 0 18px; flex-wrap: wrap; }
+.pill { border-radius: 999px; padding: 6px 14px; background: var(--soft); font-weight: 600; font-size: 10pt; }
+.pill.on { background: var(--brand); color: #fff; } .arrow { color: var(--accent); font-weight: bold; }
+.phones { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.phone { border-radius: 18px; overflow: hidden; border: 1px solid #d8d2c8; break-inside: avoid; }
+.bar { background: #075e54; color: #fff; padding: 8px 12px; display: flex; gap: 10px; align-items: center; }
+.bar small { display: block; opacity: .8; font-size: 8.5pt; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); display: grid; place-items: center;
+          font-weight: bold; }
+.chat { background: var(--chat-bg); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.msg { white-space: pre-wrap; max-width: 88%; padding: 6px 9px; border-radius: 9px; font-size: 8.6pt;
+       line-height: 1.35; box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+.msg.me { background: var(--chat-me); align-self: flex-end; }
+.msg.bot { background: var(--chat-bot); align-self: flex-start; }
+.msg.note { align-self: center; background: #fff7d6; color: #6b5b00; font-size: 8pt; border-radius: 6px; }
+.link { color: #027eb5; word-break: break-all; }
+.shot { width: 100%; border: 1px solid #e3e7ef; border-radius: 10px; }
+.arch { display: grid; grid-template-columns: 1fr auto 1.3fr auto 1fr; gap: 8px; align-items: center; margin: 14px 0; }
+.box { background: var(--soft); border-radius: 10px; padding: 10px 12px; font-size: 9.5pt; }
+.box b { color: var(--brand); display: block; }
+.todo { columns: 2; font-size: 9pt; margin: 0; padding-left: 18px; } .todo li { break-inside: avoid; }
+</style>
+
+<section>
+  <div class="hero"><h1>Lavê · WhatsApp bot</h1>
+    <p>Recolecciones, preguntas frecuentes y avisos de «listo» por WhatsApp, sin pagar por herramientas.<br>
+    Las reglas y el contenido viven en un solo archivo YAML; la IA es opcional.</p></div>
+  <div class="stats">
+    <div class="stat"><b>$0</b><span>herramientas: Python, SQLite, WhatsApp Cloud API</span></div>
+    <div class="stat"><b>13</b><span>respuestas automáticas · 86 palabras clave</span></div>
+    <div class="stat"><b>5</b><span>pasos del proceso oficial de recolección</span></div>
+    <div class="stat"><b>10</b><span>pruebas automáticas · ~404 líneas de código</span></div>
+  </div>
+  <div class="cols">
+    <div class="card"><h3>Hoy (manual)</h3><ul>
+      <li>El cliente escribe; el staff contesta con respuestas rápidas</li>
+      <li>Pedir ubicación y horario, uno por uno</li>
+      <li>Capturar en el ERP, avisar «listo», pedir reseña</li></ul></div>
+    <div class="card"><h3>Con el bot</h3><ul>
+      <li>Menú y FAQ al instante, con errores de dedo y sin acentos</li>
+      <li>Recolección guiada: servicio → ubicación → horario</li>
+      <li>«Listo» y reseña de Google se envían solos</li>
+      <li>Pasa a una persona cuando hace falta</li></ul></div>
+  </div>
+  <h2 style="margin-top:14px">El proceso oficial, paso a paso</h2>
+  <p class="lead">«¿Quieres solicitar una recolección? Solo sigue estos pasos… Así de fácil.» Cada paso es un estado del bot.</p>
+  <div class="flow"><div class="step"><div class="num">1</div><b>Escribe por WhatsApp</b><p>Menú de bienvenida o palabra clave «recolección»</p><code>idle</code></div><div class="step"><div class="num">2</div><b>Indica el servicio</b><p>Número o texto libre: «tenis», «tintorería»</p><code>ask_service</code></div><div class="step"><div class="num">3</div><b>Comparte ubicación</b><p>Ubicación de WhatsApp o dirección escrita</p><code>ask_location</code></div><div class="step"><div class="num">4</div><b>Elige horario</b><p>Ventanas desde config (o texto libre)</p><code>ask_time</code></div><div class="step"><div class="num">5</div><b>Confirmamos la agenda</b><p>Resumen → «sí» → solicitud <b>nuevo</b>; staff → <b>programado</b></p><code>confirm</code></div></div>
+  <h2>Ciclo de la solicitud</h2>
+  <div class="life"><span class="pill on">nuevo</span><span class="arrow">→ staff confirma →</span>
+    <span class="pill on">programado</span><span class="arrow">→</span><span class="pill on">listo</span>
+    <span class="arrow">→ 24 h →</span><span class="pill">reseña de Google ⭐</span></div>
+  <p class="lead">El bot nunca promete el horario: la solicitud queda en <b>nuevo</b> hasta que el staff confirma la agenda.</p>
+</section>
+
+<section>
+  <h2>Conversaciones reales del bot</h2>
+  <p class="lead">Generadas al ejecutar el bot. Si cambias el YAML y regeneras este PDF, los textos se actualizan.</p>
+  <div class="phones">
+    <div class="phone"><div class="bar"><span class="avatar">L</span><div><b>Lavê</b><small>Solicitar recolección</small></div></div><div class="chat"><div class="msg me">¿pasan por mi ropa?</div><div class="msg bot">¿Quieres solicitar una recolección? 🚗 Solo sigue estos pasos:
+1️⃣ Escríbenos por WhatsApp ✅ (¡ya lo hiciste!)
+2️⃣ Indícanos el servicio que necesitas
+3️⃣ Compártenos tu ubicación
+4️⃣ Elige tu horario
+5️⃣ Nosotros confirmamos la agenda
+Así de fácil 😉</div><div class="msg bot">🧺 ¿Qué servicio necesitas? Responde con el número:
+1. Lavandería
+2. Tintorería
+3. Planchado
+4. Interiores (edredones, cobijas)
+5. Limpieza de tenis</div><div class="msg me">1</div><div class="msg bot">📍 Compártenos tu <b>ubicación</b> de WhatsApp (clip 📎 &gt; Ubicación) o escribe tu dirección completa.</div><div class="msg me">📍 Ubicación compartida</div><div class="msg bot">🕒 ¿En qué horario te queda mejor para la recolección?
+1. Mañana 9:00–12:00 (TODO_CONFIRM)
+2. Mediodía 12:00–15:00 (TODO_CONFIRM)
+3. Tarde 15:00–18:00 (TODO_CONFIRM)</div><div class="msg me">2</div><div class="msg bot">Revisa tu solicitud de recolección 👇
+• Servicio: Lavandería
+• Ubicación: Torre Aviación <span class="link">https://maps.google.com/?q=20.7015,-103.412</span>
+• Horario: Mediodía 12:00–15:00 (TODO_CONFIRM)
+¿Todo bien? Responde <b>sí</b> para enviarla o <b>no</b> para cancelar.</div><div class="msg me">sí</div><div class="msg bot">¡Recibimos tu solicitud #1! 🙌 En breve te confirmamos la agenda de tu recolección por aquí.</div></div></div>
+    <div class="phone"><div class="bar"><span class="avatar">L</span><div><b>Lavê</b><small>Después de la solicitud</small></div></div><div class="chat"><div class="msg note">Staff confirma la agenda → programado</div><div class="msg bot">📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #1) en el horario acordado. Te avisamos cuando esté lista 🧺</div><div class="msg note">Staff marca → listo</div><div class="msg bot">🎉 ¡Tu pedido #1 está listo!
+Puedes recogerlo en Av. Aviación 4284-1, Jardín Real, Zapopan, Jal.
+🕗 Lunes a viernes 8:00–19:00, sábado 8:00–18:00
+(Si pediste entrega a domicilio, vamos en camino 🚗)</div><div class="msg note">24 h después (automático)</div><div class="msg bot">Hola 👋 ¿Cómo te fue con tu pedido en Lavê? 💙
+Nos ayudarías muchísimo con una reseña de 1 minuto ⭐⭐⭐⭐⭐
+<span class="link">https://g.page/r/TODO_CONFIRM/review</span>
+¡Gracias por tu confianza!</div></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="phones">
+    <div class="phone"><div class="bar"><span class="avatar">L</span><div><b>Lavê</b><small>Bienvenida y preguntas frecuentes</small></div></div><div class="chat"><div class="msg me">Hola</div><div class="msg bot">Hola 👋 Somos Lavê, tu lavandería de confianza 🧺✨
+¿En qué te ayudamos hoy? Responde con el número:
+1️⃣ Precios
+2️⃣ Métodos de pago
+3️⃣ Servicios
+4️⃣ Horarios y ubicación
+5️⃣ Solicitar recolección 🚗
+6️⃣ Hablar con una persona
+
+🔒 Solo guardamos tu número, nombre, ubicación y pedido para darte servicio.</div><div class="msg me">presios</div><div class="msg bot">💲 Precios (TODO_CONFIRM con el dueño):
+• Lavandería por kilo: $TODO_CONFIRM /kg (mínimo 3 kg)
+• Auto-lavado (lavadora): $TODO_CONFIRM por carga
+• Tintorería: desde $TODO_CONFIRM por prenda
+• Planchado: $TODO_CONFIRM por prenda / docena $TODO_CONFIRM
+• Edredones y cobijas: desde $TODO_CONFIRM
+• Limpieza de tenis: $TODO_CONFIRM por par
+• Recolección y entrega: $TODO_CONFIRM
+¿Quieres hacer un pedido? Escribe <b>pedido</b> 🧺</div><div class="msg me">aceptan tarjeta?</div><div class="msg bot">💳 Aceptamos efectivo, tarjeta de débito/crédito y transferencia. (TODO_CONFIRM)</div></div></div>
+    <div class="phone"><div class="bar"><span class="avatar">L</span><div><b>Lavê</b><small>Pregunta desconocida y hablar con una persona</small></div></div><div class="chat"><div class="msg me">lavan alfombras persas?</div><div class="msg bot">Uy, no te entendí bien 😅 Te dejo el menú para ayudarte mejor:</div><div class="msg bot">Hola 👋 Somos Lavê, tu lavandería de confianza 🧺✨
+¿En qué te ayudamos hoy? Responde con el número:
+1️⃣ Precios
+2️⃣ Métodos de pago
+3️⃣ Servicios
+4️⃣ Horarios y ubicación
+5️⃣ Solicitar recolección 🚗
+6️⃣ Hablar con una persona
+
+🔒 Solo guardamos tu número, nombre, ubicación y pedido para darte servicio.</div><div class="msg me">quiero hablar con una persona</div><div class="msg bot">¡Claro! 🙌 En un momento alguien de nuestro equipo te atiende por aquí.</div><div class="msg me">hola?</div><div class="msg note">🤫 Bot en silencio: una persona del equipo atiende</div></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Panel del staff</h2>
+  <p class="lead">Las solicitudes, los botones <b>programado</b>/<b>listo</b>, los chats que esperan a una persona y las
+  preguntas sin respuesta (para agregarlas al YAML). El ERP puede usar el mismo endpoint: <code>POST /orders/{id}/status</code>.</p>
+  <img class="shot" src="admin.png">
+  <h2 style="margin-top:20px">Cómo funciona</h2>
+  <div class="arch">
+    <div class="box"><b>WhatsApp</b>Cloud API webhook (firma verificada) o simulador en terminal</div><span class="arrow">→</span>
+    <div class="box"><b>handle_message()</b>Menú · FAQ con búsqueda aproximada · máquina de estados · pasar a una persona ·
+      IA opcional que responde solo con el YAML</div><span class="arrow">→</span>
+    <div class="box"><b>SQLite</b>clientes, solicitudes, preguntas sin respuesta</div>
+  </div>
+  <div class="cols">
+    <div class="card"><h3>Todo el contenido en <code>config/lave.yaml</code></h3>
+      Horarios, dirección, precios, pagos, palabras clave, plantillas y la liga de reseña. El dueño edita textos sin
+      programar; los cambios aplican de inmediato.</div>
+    <div class="card"><h3>Privacidad</h3>
+      Solo guarda teléfono, nombre, ubicación y pedido. El mensaje de bienvenida lo dice. Modo <code>DRY_RUN</code>
+      para revisar mensajes antes de enviarlos.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Pendiente de confirmar con el dueño</h2>
+  <p class="lead">17 datos marcados <code>TODO_CONFIRM</code> en el YAML. Esta lista se genera del archivo.</p>
+  <ul class="todo"><li>address: Av. Aviación 4284-1, Jardín Real, Zapopan, Jal.</li><li>hours: Lunes a viernes 8:00–19:00, sábado 8:00–18:00</li><li>maps_link: https://maps.google.com/?q=Av.+Aviación+4284+Jardín+Real+Zapopan</li><li>review_link: https://g.page/r/TODO_CONFIRM/review</li><li>Lavandería por kilo: $TODO_CONFIRM /kg (mínimo 3 kg)</li><li>Auto-lavado (lavadora): $TODO_CONFIRM por carga</li><li>Tintorería: desde $TODO_CONFIRM por prenda</li><li>Planchado: $TODO_CONFIRM por prenda / docena $TODO_CONFIRM</li><li>Edredones y cobijas: desde $TODO_CONFIRM</li><li>Limpieza de tenis: $TODO_CONFIRM por par</li><li>Recolección y entrega: $TODO_CONFIRM</li><li>💳 Aceptamos efectivo, tarjeta de débito/crédito y transferencia. (TODO_CONFIRM)</li><li>🎉 ¡Bienvenido/a! Si es tu primera vez con nosotros pregunta por la promo de nuevo cliente (TODO_CONFIRM). Escribe *pedido* para empezar.</li><li>🎓🪖 Atendemos con gusto a estudiantes del Tec, militares y oficinas cercanas. Pregunta por descuentos con tu credencial (TODO_CONFIRM).</li><li>Mañana 9:00–12:00 (TODO_CONFIRM)</li><li>Mediodía 12:00–15:00 (TODO_CONFIRM)</li><li>Tarde 15:00–18:00 (TODO_CONFIRM)</li></ul>
+  <h2 style="margin-top:22px">Siguientes pasos</h2>
+  <div class="cols">
+    <div class="card"><ul>
+      <li>Plantillas aprobadas por Meta para «listo» y reseña (regla de 24 h de WhatsApp)</li>
+      <li>Botones interactivos de WhatsApp para el menú y los horarios</li></ul></div>
+    <div class="card"><ul>
+      <li>Conectar el ERP al endpoint de estado</li>
+      <li>Revisar cada semana las preguntas sin respuesta y ampliar el YAML</li></ul></div>
+  </div>
+</section>
+</html>
