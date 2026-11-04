@@ -200,3 +200,50 @@ def test_entregado_thanks_customer_and_still_triggers_review():
         r = client.post("/orders/1/status", json={"status": "entregado"})  # staff skipped listo
     assert "#1 entregada" in r.json()["sent"][0]
     assert bot.send_due_reviews(now=time.time() + 25 * 3600) == 1
+
+
+def test_conversation_is_logged_for_admin():
+    say("hola")
+    say(location={"latitude": 20.7, "longitude": -103.4, "name": "Casa"})
+    rows = [(r["who"], r["text"]) for r in bot.q("select who, text from messages order by id")]
+    assert rows[0] == ("customer", "hola") and rows[1][0] == "bot" and "Lavê" in rows[1][1]
+    assert rows[2] == ("customer", "📍 Casa https://maps.google.com/?q=20.7,-103.4")
+
+
+def test_business_app_echo_is_logged_and_pauses_bot():
+    from fastapi.testclient import TestClient
+    import app
+    say("hola")
+    echo = {"entry": [{"changes": [{"field": "smb_message_echoes", "value": {"message_echoes": [
+        {"from": "5213300000000", "to": P, "id": "wamid.E1", "type": "text", "text": {"body": "Hola, soy Ana de Lavê"}}]}}]}]}
+    with TestClient(app.app) as client:
+        client.post("/webhook", json=echo)
+        client.post("/webhook", json=echo)  # Meta retry
+        assert "Hola, soy Ana de Lavê" in client.get(f"/admin/chat/{P}").text
+    staff = bot.q("select text from messages where who='staff_app'")
+    assert [r["text"] for r in staff] == ["Hola, soy Ana de Lavê"]
+    assert say("gracias") == []  # staff owns the chat now
+    assert bot.q("select text from messages order by id desc limit 1")[0]["text"] == "gracias"
+
+
+def test_admin_reply_sends_logs_and_respects_24h(monkeypatch):
+    from fastapi.testclient import TestClient
+    import time
+    import app
+    say("hola")
+    with TestClient(app.app) as client:
+        assert client.post(f"/users/{P}/reply", json={"text": "Te escribo de Lavê"}).status_code == 200
+        assert "🙋 Staff · admin" in client.get(f"/admin/chat/{P}").text
+        assert client.post("/users/5210000000000/reply", json={"text": "hola"}).status_code == 409  # never wrote
+        real = time.time
+        monkeypatch.setattr(time, "time", lambda: real() + 25 * 3600)
+        assert client.post(f"/users/{P}/reply", json={"text": "¿sigues ahí?"}).status_code == 409
+    assert bot.q("select needs_human from users where phone=?", P)[0]["needs_human"] == 1
+    assert bot.q("select count(*) n from messages where who='staff_admin'")[0]["n"] == 1
+
+
+def test_purge_drops_only_old_messages():
+    import time
+    say("hola")
+    assert bot.purge_messages() == 0
+    assert bot.purge_messages(now=time.time() + 91 * 86400) == 2  # customer + bot
