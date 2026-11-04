@@ -21,6 +21,7 @@ create table if not exists orders(id integer primary key, phone text, name text,
   location text, time_window text, status text default 'nuevo', created_at real, ready_at real,
   review_sent int default 0);
 create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
+create table if not exists seen(id text primary key);  -- webhook message ids already processed
 """
 
 

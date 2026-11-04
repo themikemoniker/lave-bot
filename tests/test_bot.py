@@ -105,3 +105,19 @@ def test_webhook_signature_and_message(monkeypatch):
         assert client.post("/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
     assert sent and "Somos Lavê" in sent[0][1]
     assert bot.q("select name from users")[0]["name"] == "Ana"
+
+
+def test_webhook_retry_is_deduped_and_statuses_ignored(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+    sent = []
+    monkeypatch.setattr(bot, "send", lambda phone, text: sent.append((phone, text)))
+    msg = {"entry": [{"changes": [{"value": {"messages": [
+        {"id": "wamid.1", "from": P, "type": "text", "text": {"body": "hola"}}]}}]}]}
+    status = {"entry": [{"changes": [{"value": {"statuses": [{"id": "wamid.out", "status": "read"}]}}]}]}
+    with TestClient(app.app) as client:
+        client.post("/webhook", json=msg)
+        n = len(sent)
+        client.post("/webhook", json=msg)  # Meta retry
+        client.post("/webhook", json=status)
+    assert n and len(sent) == n
