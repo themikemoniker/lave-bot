@@ -4,3 +4,4 @@ pyyaml
 rapidfuzz
 httpx
 pytest
+anthropic
