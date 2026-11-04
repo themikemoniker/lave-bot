@@ -20,7 +20,6 @@ create table if not exists users(phone text primary key, name text, state text d
 create table if not exists orders(id integer primary key, phone text, name text, service text,
   location text, time_window text, status text default 'nuevo', created_at real, ready_at real,
   review_sent int default 0, confirmed_slot text);
--- ponytail: no migrations; a pre-existing lave.db needs `alter table orders add column confirmed_slot text`.
 create table if not exists unanswered(id integer primary key, phone text, text text, created_at real);
 """
 
@@ -35,6 +34,10 @@ def q(sql, *args):
     with closing(sqlite3.connect(os.getenv("DB_PATH", ROOT / "lave.db"))) as c:
         c.row_factory = sqlite3.Row
         c.executescript(SCHEMA)
+        try:  # self-heal DBs created before confirmed_slot existed
+            c.execute("alter table orders add column confirmed_slot text")
+        except sqlite3.OperationalError:
+            pass  # duplicate column: already there
         rows = c.execute(sql, args).fetchall()
         c.commit()
         return rows

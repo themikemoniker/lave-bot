@@ -107,6 +107,17 @@ def test_webhook_signature_and_message(monkeypatch):
     assert bot.q("select name from users")[0]["name"] == "Ana"
 
 
+def test_old_db_gains_confirmed_slot(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "old.db"
+    with sqlite3.connect(db) as c:
+        c.execute("create table orders(id integer primary key, phone text, name text, service text, location text, "
+                  "time_window text, status text default 'nuevo', created_at real, ready_at real, review_sent int default 0)")
+        c.execute("insert into orders(phone, time_window) values('521', 'Tarde')")
+    monkeypatch.setenv("DB_PATH", str(db))
+    assert "Tarde" in bot.set_status(1, "programado")[0]
+
+
 def test_programado_confirms_exact_slot():
     from fastapi.testclient import TestClient
     import app
