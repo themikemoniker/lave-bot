@@ -67,7 +67,7 @@ code { font-size: 8.5pt; background: #fff; border-radius: 4px; padding: 1px 5px;
     <div class="stat"><b>$0</b><span>herramientas: Python, SQLite, WhatsApp Cloud API</span></div>
     <div class="stat"><b>13</b><span>respuestas automáticas · 86 palabras clave</span></div>
     <div class="stat"><b>5</b><span>pasos del proceso oficial de recolección</span></div>
-    <div class="stat"><b>15</b><span>pruebas automáticas · ~459 líneas de código</span></div>
+    <div class="stat"><b>16</b><span>pruebas automáticas · ~460 líneas de código</span></div>
   </div>
   <div class="cols">
     <div class="card"><h3>Hoy (manual)</h3><ul>
@@ -85,7 +85,7 @@ code { font-size: 8.5pt; background: #fff; border-radius: 4px; padding: 1px 5px;
   <div class="flow"><div class="step"><div class="num">1</div><b>Escribe por WhatsApp</b><p>Menú de bienvenida o palabra clave «recolección»</p><code>idle</code></div><div class="step"><div class="num">2</div><b>Indica el servicio</b><p>Número o texto libre: «tenis», «tintorería»</p><code>ask_service</code></div><div class="step"><div class="num">3</div><b>Comparte ubicación</b><p>Ubicación de WhatsApp o dirección escrita</p><code>ask_location</code></div><div class="step"><div class="num">4</div><b>Elige horario</b><p>Ventanas desde config (o texto libre)</p><code>ask_time</code></div><div class="step"><div class="num">5</div><b>Confirmamos la agenda</b><p>Resumen → «sí» → solicitud <b>nuevo</b>; staff → <b>programado</b></p><code>confirm</code></div></div>
   <h2>Ciclo de la solicitud</h2>
   <div class="life"><span class="pill on">nuevo</span><span class="arrow">→ staff confirma →</span>
-    <span class="pill on">programado</span><span class="arrow">→</span><span class="pill on">listo</span>
+    <span class="pill on">programado</span><span class="arrow">→</span><span class="pill on">listo</span><span class="arrow">→</span><span class="pill on">entregado</span>
     <span class="arrow">→ 24 h →</span><span class="pill">reseña de Google ⭐</span></div>
   <p class="lead">El bot nunca promete el horario: la solicitud queda en <b>nuevo</b> hasta que el staff confirma la agenda.</p>
 </section>
@@ -114,8 +114,8 @@ Así de fácil 😉</div><div class="msg bot">🧺 ¿Qué servicio necesitas? Re
 • Horario: Mediodía 12:00–15:00
 ¿Todo bien? Responde <b>sí</b> para enviarla o <b>no</b> para cancelar.</div><div class="msg me">sí</div><div class="msg bot">¡Recibimos tu solicitud #1! 🙌 En breve te confirmamos la agenda de tu recolección por aquí.</div></div></div>
     <div class="phone"><div class="bar"><span class="avatar">L</span><div><b>Lavê</b><small>Después de la solicitud</small></div></div><div class="chat"><div class="msg note">Staff confirma la agenda → programado</div><div class="msg bot">📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #1) 🕒 Mediodía 12:00–15:00. Te avisamos cuando esté lista 🧺</div><div class="msg note">Staff marca → listo</div><div class="msg bot">🎉 ¡Tu ropa está lista! (solicitud #1)
-Te la llevamos en el horario acordado 🚗, o si prefieres pasa por ella a Av. Aviación 4284-1, Jardín Real, Zapopan, Jal.
-🕗 Lunes a viernes 8:00–19:00, sábado 8:00–18:00</div><div class="msg note">24 h después (automático)</div><div class="msg bot">Hola 👋 ¿Cómo te fue con tu pedido en Lavê? 💙
+Te escribimos para coordinar la entrega 🚗, o si prefieres pasa por ella a Av. Aviación 4284-1, Jardín Real, Zapopan, Jal.
+🕗 Lunes a viernes 8:00–19:00, sábado 8:00–18:00</div><div class="msg note">Staff marca → entregado</div><div class="msg bot">✅ ¡Solicitud #1 entregada! Gracias por confiar en Lavê 💙 Cuando quieras otra recolección escribe <b>pedido</b>.</div><div class="msg note">24 h después (automático)</div><div class="msg bot">Hola 👋 ¿Cómo te fue con tu pedido en Lavê? 💙
 Nos ayudarías muchísimo con una reseña de 1 minuto ⭐⭐⭐⭐⭐
 <span class="link">https://www.google.com/maps/search/?api=1&amp;query=Lav%C3%AA+Zapopan</span>
 ¡Gracias por tu confianza!</div></div></div>
@@ -185,7 +185,7 @@ Nos ayudarías muchísimo con una reseña de 1 minuto ⭐⭐⭐⭐⭐
   <div class="cols">
     <div class="card"><ul>
       <li>Confirmar con el dueño cada dato TODO_CONFIRM</li>
-      <li>Registrar en Meta las plantillas programado / listo / reseña (regla de 24 h)</li>
+      <li>Registrar en Meta las plantillas programado / listo / entregado / reseña (regla de 24 h)</li>
       <li>Publicar con Docker + cloudflared y conectar el número de WhatsApp</li></ul></div>
     <div class="card"><ul>
       <li>Conectar el ERP al endpoint de estado</li>
