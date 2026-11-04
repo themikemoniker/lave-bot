@@ -145,12 +145,20 @@ order:
 templates:
   programado: "📅 ¡Agenda confirmada! Pasamos por tu ropa (solicitud #{order_id}) en el horario acordado. Te avisamos cuando esté lista 🧺"
   listo: |
-    🎉 ¡Tu pedido #{order_id} está listo!
-    Puedes recogerlo en {address}
+    🎉 ¡Tu ropa está lista! (solicitud #{order_id})
+    Te la llevamos en el horario acordado 🚗, o si prefieres pasa por ella a {address}
     🕗 {hours}
-    (Si pediste entrega a domicilio, vamos en camino 🚗)
   review: |
     Hola 👋 ¿Cómo te fue con tu pedido en {name}? 💙
     Nos ayudarías muchísimo con una reseña de 1 minuto ⭐⭐⭐⭐⭐
     {review_link}
     ¡Gracias por tu confianza!
+
+# Meta-approved WhatsApp templates for the messages above. WhatsApp only allows free-form text within 24h of
+# the customer's last message, and "listo"/review often land later. Register each one in WhatsApp Manager >
+# Message templates (category: Utility, language: Spanish (MEX)) with the same wording as `templates`,
+# replacing each {placeholder} with {{1}}, {{2}}... in `params` order. Delete an entry to send plain text.
+wa_templates:   # TODO_CONFIRM names once Meta approves them
+  programado: {name: lave_agenda_confirmada, language: es_MX, params: [order_id]}
+  listo: {name: lave_ropa_lista, language: es_MX, params: [order_id, address, hours]}
+  review: {name: lave_resena, language: es_MX, params: [name, review_link]}
